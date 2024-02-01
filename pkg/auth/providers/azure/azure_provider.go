@@ -200,8 +200,8 @@ func (ap *Provider) TransformToAuthProvider(
 
 	tenantID, _ := authConfig["tenantId"].(string)
 	p[publicclient.AzureADProviderFieldTenantID] = tenantID
-	applicationId, _ := authConfig["applicationId"].(string)
-	p[publicclient.AzureADProviderFieldClientID] = applicationId
+	applicationID, _ := authConfig["applicationId"].(string)
+	p[publicclient.AzureADProviderFieldClientID] = applicationID
 	p[publicclient.AzureADProviderFieldScopes] = []string{"openid", "profile", "email"}
 
 	ep := microsoft.AzureADEndpoint(tenantID)
