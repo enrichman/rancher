@@ -20,7 +20,8 @@ func (a *AuthProvider) GetType() string {
 	return a.Type
 }
 
-type OAuthInfo struct {
+type OAuthProvider struct {
+	ClientID      string `json:"clientId"`
 	OAuthEndpoint `json:",inline"`
 	Scopes        []string `json:"scopes"`
 }
@@ -128,8 +129,8 @@ type AzureADProvider struct {
 
 	RedirectURL string `json:"redirectUrl"`
 	TenantID    string `json:"tenantId,omitempty"`
-	ClientID    string `json:"clientId,omitempty"`
-	OAuthInfo   `json:",inline"`
+
+	OAuthProvider `json:",inline"`
 }
 
 // +genclient
