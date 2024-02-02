@@ -21,9 +21,9 @@ func (a *AuthProvider) GetType() string {
 }
 
 type OAuthProvider struct {
-	ClientID      string `json:"clientId"`
-	OAuthEndpoint `json:",inline"`
+	ClientID      string   `json:"clientId"`
 	Scopes        []string `json:"scopes"`
+	OAuthEndpoint `json:",inline"`
 }
 
 type OAuthEndpoint struct {
