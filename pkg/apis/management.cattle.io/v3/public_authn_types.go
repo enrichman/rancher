@@ -79,6 +79,8 @@ type GithubProvider struct {
 	AuthProvider      `json:",inline"`
 
 	RedirectURL string `json:"redirectUrl"`
+
+	OAuthProvider `json:",inline"`
 }
 
 type GithubLogin struct {

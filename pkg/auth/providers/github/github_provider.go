@@ -22,6 +22,7 @@ import (
 	"github.com/rancher/rancher/pkg/types/config"
 	"github.com/rancher/rancher/pkg/user"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/oauth2/endpoints"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -67,6 +68,15 @@ func (g *ghProvider) CustomizeSchema(schema *types.Schema) {
 func (g *ghProvider) TransformToAuthProvider(authConfig map[string]interface{}) (map[string]interface{}, error) {
 	p := common.TransformToAuthProvider(authConfig)
 	p[publicclient.GithubProviderFieldRedirectURL] = formGithubRedirectURLFromMap(authConfig)
+
+	clientID, _ := authConfig["clientId"].(string)
+	p[publicclient.GithubProviderFieldClientID] = clientID
+	p[publicclient.GithubProviderFieldScopes] = []string{"openid", "profile", "email"}
+
+	p[publicclient.GithubProviderFieldAuthURL] = endpoints.GitHub.AuthURL
+	p[publicclient.GithubProviderFieldTokenURL] = endpoints.GitHub.TokenURL
+	p[publicclient.GithubProviderFieldDeviceAuthURL] = endpoints.GitHub.DeviceAuthURL
+
 	return p, nil
 }
 

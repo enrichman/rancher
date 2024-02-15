@@ -240,6 +240,10 @@ type GithubConfig struct {
 	// AdditionalClientIDs is a map of clientID to client secrets
 	AdditionalClientIDs map[string]string `json:"additionalClientIds,omitempty" norman:"nocreate,noupdate"`
 	HostnameToClientID  map[string]string `json:"hostnameToClientId,omitempty" norman:"nocreate,noupdate"`
+
+	TokenEndpoint      string `json:"tokenEndpoint,omitempty" norman:"required,notnullable"`
+	AuthEndpoint       string `json:"authEndpoint,omitempty" norman:"required,notnullable"`
+	DeviceAuthEndpoint string `json:"deviceAuthEndpoint,omitempty" norman:"required,notnullable"`
 }
 
 type GithubConfigTestOutput struct {
