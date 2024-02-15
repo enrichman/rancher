@@ -86,6 +86,7 @@ type GithubProvider struct {
 type GithubLogin struct {
 	GenericLogin `json:",inline"`
 	Code         string `json:"code" norman:"type=string,required"`
+	AccessToken  string `json:"access_token" norman:"type=string,required"`
 }
 
 // +genclient

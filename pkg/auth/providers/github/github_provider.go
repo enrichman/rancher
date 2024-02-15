@@ -71,7 +71,7 @@ func (g *ghProvider) TransformToAuthProvider(authConfig map[string]interface{}) 
 
 	clientID, _ := authConfig["clientId"].(string)
 	p[publicclient.GithubProviderFieldClientID] = clientID
-	p[publicclient.GithubProviderFieldScopes] = []string{"openid", "profile", "email"}
+	p[publicclient.GithubProviderFieldScopes] = []string{"user"}
 
 	p[publicclient.GithubProviderFieldAuthURL] = endpoints.GitHub.AuthURL
 	p[publicclient.GithubProviderFieldTokenURL] = endpoints.GitHub.TokenURL
@@ -186,12 +186,16 @@ func (g *ghProvider) LoginUser(host string, githubCredential *v32.GithubLogin, c
 	}
 
 	config = choseClientID(host, config)
-	securityCode := githubCredential.Code
 
-	accessToken, err := g.githubClient.getAccessToken(securityCode, config)
-	if err != nil {
-		logrus.Infof("Error generating accessToken from github %v", err)
-		return v3.Principal{}, nil, "", err
+	accessToken := githubCredential.AccessToken
+
+	if githubCredential.Code != "" {
+		securityCode := githubCredential.Code
+		accessToken, err = g.githubClient.getAccessToken(securityCode, config)
+		if err != nil {
+			logrus.Infof("Error generating accessToken from github %v", err)
+			return v3.Principal{}, nil, "", err
+		}
 	}
 
 	user, err := g.githubClient.getUser(accessToken, config)
