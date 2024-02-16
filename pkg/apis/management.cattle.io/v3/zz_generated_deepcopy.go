@@ -5846,6 +5846,7 @@ func (in *OIDCProvider) DeepCopyInto(out *OIDCProvider) {
 	out.TypeMeta = in.TypeMeta
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
 	in.AuthProvider.DeepCopyInto(&out.AuthProvider)
+	in.OAuthProvider.DeepCopyInto(&out.OAuthProvider)
 	return
 }
 

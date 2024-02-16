@@ -216,6 +216,8 @@ type OIDCProvider struct {
 	AuthProvider      `json:",inline"`
 
 	RedirectURL string `json:"redirectUrl"`
+
+	OAuthProvider `json:",inline"`
 }
 
 type OIDCLogin struct {

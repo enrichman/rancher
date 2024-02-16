@@ -181,6 +181,31 @@ func (o *OpenIDCProvider) GetPrincipal(principalID string, token v3.Token) (v3.P
 func (o *OpenIDCProvider) TransformToAuthProvider(authConfig map[string]interface{}) (map[string]interface{}, error) {
 	p := common.TransformToAuthProvider(authConfig)
 	p[publicclient.OIDCProviderFieldRedirectURL] = o.getRedirectURL(authConfig)
+
+	// p[publicclient.OIDCProviderField] =
+
+	clientID, _ := authConfig["clientId"].(string)
+	p[publicclient.OIDCProviderFieldClientID] = clientID
+
+	scopes := []string{"openid", "profile", "email"}
+	// use custom scopes if defined
+	if customScopes, found := authConfig["scopes"].([]interface{}); found {
+		scopes = []string{}
+		for _, scope := range customScopes {
+			if s, ok := scope.(string); ok {
+				scopes = append(scopes, s)
+			}
+		}
+	}
+	p[publicclient.OIDCProviderFieldScopes] = scopes
+
+	authURL, _ := authConfig["authEndpoint"].(string)
+	p[publicclient.OIDCProviderFieldAuthURL] = authURL
+
+	issuerURL, _ := authConfig["issuer"].(string)
+	p[publicclient.OIDCProviderFieldTokenURL] = issuerURL + "/protocol/openid-connect/token"
+	p[publicclient.OIDCProviderFieldDeviceAuthURL] = issuerURL + "/protocol/openid-connect/auth/device"
+
 	return p, nil
 }
 
