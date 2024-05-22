@@ -151,13 +151,17 @@ func GetGroupSearchAttributes(config *v32.ActiveDirectoryConfig, searchAttribute
 }
 
 func GetUserSearchAttributesForLDAP(ObjectClass string, config *v3.LdapConfig) []string {
-	userSearchAttributes := []string{"dn", config.UserMemberAttribute,
+	return []string{
+		"dn",
 		ObjectClass,
+		"objectGUID",
+		"entryUUID",
+		config.UserMemberAttribute,
 		config.UserObjectClass,
 		config.UserLoginAttribute,
 		config.UserNameAttribute,
-		config.UserEnabledAttribute}
-	return userSearchAttributes
+		config.UserEnabledAttribute,
+	}
 }
 
 func GetGroupSearchAttributesForLDAP(ObjectClass string, config *v3.LdapConfig) []string {
@@ -205,6 +209,10 @@ func AttributesToPrincipal(attribs []*ldapv3.EntryAttribute, dnStr, scope, provi
 				if len(attr.Values) > 0 && attr.Values[0] != "" {
 					login = attr.Values[0]
 				}
+			}
+
+			if attr.Name == "objectGUID" || attr.Name == "entryUUID" {
+				externalID = attr.Name + "=" + attr.Values[0]
 			}
 		}
 		if login == "" {
