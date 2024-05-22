@@ -214,6 +214,10 @@ func (p *ldapProvider) GetPrincipal(principalID string, token v3.Token) (v3.Prin
 	if p.isThisUserMe(token.UserPrincipal, *principal) {
 		principal.Me = true
 	}
+
+	// restore principalID (?) :(
+	principal.ObjectMeta.Name = principalID
+
 	return *principal, err
 }
 

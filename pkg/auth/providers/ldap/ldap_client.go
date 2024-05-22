@@ -1,8 +1,10 @@
 package ldap
 
 import (
+	"bytes"
 	"crypto/x509"
 	"fmt"
+	"html"
 	"reflect"
 	"strings"
 
@@ -38,10 +40,22 @@ func (p *ldapProvider) loginUser(lConn ldapv3.Client, credential *v32.BasicLogin
 
 	logrus.Debug("Binding username password")
 
-	searchRequest := ldapv3.NewSearchRequest(config.UserSearchBase,
-		ldapv3.ScopeWholeSubtree, ldapv3.NeverDerefAliases, 0, 0, false,
-		fmt.Sprintf("(&(%v=%v)(%v=%v))", ObjectClass, config.UserObjectClass, config.UserLoginAttribute, ldapv3.EscapeFilter(username)),
-		ldap.GetUserSearchAttributesForLDAP(ObjectClass, config), nil)
+	filter := fmt.Sprintf(
+		"(&(%v=%v)(%v=%v))",
+		ObjectClass, config.UserObjectClass,
+		config.UserLoginAttribute, ldapv3.EscapeFilter(username),
+	)
+
+	searchRequest := ldapv3.NewSearchRequest(
+		config.UserSearchBase,
+		ldapv3.ScopeWholeSubtree,
+		ldapv3.NeverDerefAliases,
+		0, 0, false,
+		filter,
+		ldap.GetUserSearchAttributesForLDAP(ObjectClass, config),
+		nil,
+	)
+
 	result, err := lConn.Search(searchRequest)
 	if err != nil {
 		return v3.Principal{}, nil, httperror.WrapAPIError(err, httperror.Unauthorized, "authentication failed") // need to reload this error
@@ -52,6 +66,11 @@ func (p *ldapProvider) loginUser(lConn ldapv3.Client, credential *v32.BasicLogin
 	} else if len(result.Entries) > 1 {
 		return v3.Principal{}, nil, fmt.Errorf("ldap user search found more than one result")
 	}
+
+	entry := result.Entries[0]
+	guidString := html.EscapeString(fmt.Sprintf("%x", entry.GetRawAttributeValue("objectGUID")))
+	uuidString := html.EscapeString(fmt.Sprintf("%x", entry.GetRawAttributeValue("entryUUID")))
+	fmt.Println(guidString, uuidString)
 
 	userDN := result.Entries[0].DN //userDN is externalID
 	err = lConn.Bind(userDN, password)
@@ -226,6 +245,8 @@ func (p *ldapProvider) getPrincipalsFromSearchResult(result *ldapv3.SearchResult
 }
 
 func (p *ldapProvider) getPrincipal(distinguishedName string, scope string, config *v3.LdapConfig, caPool *x509.CertPool) (*v3.Principal, error) {
+	var principalIDs []string
+
 	var search *ldapv3.SearchRequest
 	var filter string
 	if (scope != p.userScope) && (scope != p.groupScope) {
@@ -292,10 +313,97 @@ func (p *ldapProvider) getPrincipal(distinguishedName string, scope string, conf
 	}
 
 	if strings.EqualFold("user", entityType) {
-		search = ldapv3.NewSearchRequest(distinguishedName,
-			ldapv3.ScopeBaseObject, ldapv3.NeverDerefAliases, 0, 0, false,
-			filter,
-			ldap.GetUserSearchAttributesForLDAP(ObjectClass, config), nil)
+
+		// if dn is NOT using GUID check if we can find an already "migrated" existing user
+		var uuid string
+		if !strings.HasPrefix(distinguishedName, "entryUUID=") {
+			u, err := p.userMGR.GetUserByPrincipalID(scope + "://" + distinguishedName)
+			if err != nil {
+				return nil, fmt.Errorf("getting user by legacy principalID [%s]: %v", scope+"://"+distinguishedName, err)
+			}
+
+			// user found, look for the entryUUID
+			if u != nil {
+				principalIDs = u.PrincipalIDs
+				for _, principalID := range u.PrincipalIDs {
+					if strings.Contains(principalID, "entryUUID") {
+						uuid = strings.TrimPrefix(principalID, scope+"://entryUUID=")
+						break
+					}
+				}
+			}
+		} else {
+			uuid = strings.TrimPrefix(distinguishedName, "entryUUID=")
+		}
+
+		// uuid not found (?), try legacy search
+		if uuid == "" {
+			search = ldapv3.NewSearchRequest(distinguishedName,
+				ldapv3.ScopeBaseObject, ldapv3.NeverDerefAliases, 0, 0, false,
+				filter,
+				ldap.GetUserSearchAttributesForLDAP(ObjectClass, config), nil)
+		} else {
+			escapeUUID := func(s string) string {
+				s = strings.Replace(s, "-", "", -1)
+
+				var buffer bytes.Buffer
+				var n1 = 1
+				var l1 = len(s) - 1
+				buffer.WriteRune('\\')
+				for i, r := range s {
+					buffer.WriteRune(r)
+					if i%2 == n1 && i != l1 {
+						buffer.WriteRune('\\')
+					}
+				}
+				return buffer.String()
+			}
+
+			fmt.Println(escapeUUID(uuid))
+			filter += fmt.Sprintf("(entryUUID=%v)", uuid)
+			filter = fmt.Sprintf("(&%s)", filter)
+
+			search = ldapv3.NewSearchRequest(config.UserSearchBase,
+				ldapv3.ScopeWholeSubtree, ldapv3.NeverDerefAliases, 0, 0, false,
+				filter,
+				ldap.GetUserSearchAttributesForLDAP(ObjectClass, config), nil)
+		}
+
+		// // SEARCH WITH GUID!
+		// if strings.HasPrefix(distinguishedName, "entryUUID=") {
+		// 	guid := strings.TrimPrefix(distinguishedName, "entryUUID=")
+
+		// 	// fail: "entryUUID=496bb538-a254-103e-94ae-059ee10179b5"
+		// 	escapeUUID := func(s string) string {
+		// 		s = strings.Replace(s, "-", "", -1)
+
+		// 		var buffer bytes.Buffer
+		// 		var n1 = 1
+		// 		var l1 = len(s) - 1
+		// 		buffer.WriteRune('\\')
+		// 		for i, r := range s {
+		// 			buffer.WriteRune(r)
+		// 			if i%2 == n1 && i != l1 {
+		// 				buffer.WriteRune('\\')
+		// 			}
+		// 		}
+		// 		return buffer.String()
+		// 	}
+
+		// 	fmt.Println(escapeUUID(guid))
+		// 	filter += fmt.Sprintf("(entryUUID=%v)", guid)
+		// 	filter = fmt.Sprintf("(&%s)", filter)
+
+		// 	search = ldapv3.NewSearchRequest(config.UserSearchBase,
+		// 		ldapv3.ScopeWholeSubtree, ldapv3.NeverDerefAliases, 0, 0, false,
+		// 		filter,
+		// 		ldap.GetUserSearchAttributesForLDAP(ObjectClass, config), nil)
+		// } else {
+		// 	search = ldapv3.NewSearchRequest(distinguishedName,
+		// 		ldapv3.ScopeBaseObject, ldapv3.NeverDerefAliases, 0, 0, false,
+		// 		filter,
+		// 		ldap.GetUserSearchAttributesForLDAP(ObjectClass, config), nil)
+		// }
 	} else {
 		search = ldapv3.NewSearchRequest(distinguishedName,
 			ldapv3.ScopeBaseObject, ldapv3.NeverDerefAliases, 0, 0, false,
@@ -328,6 +436,15 @@ func (p *ldapProvider) getPrincipal(distinguishedName string, scope string, conf
 	if err != nil {
 		return nil, err
 	}
+
+	// store legacy principalIDs
+	if len(principalIDs) > 0 {
+		if principal.ExtraInfo == nil {
+			principal.ExtraInfo = map[string]string{}
+		}
+		principal.ExtraInfo["principalIDs"] = strings.Join(principalIDs, "|") // :(
+	}
+
 	return principal, nil
 }
 

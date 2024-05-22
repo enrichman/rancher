@@ -31,6 +31,7 @@ import (
 	"github.com/rancher/rancher/pkg/agent/clean"
 	"github.com/rancher/rancher/pkg/agent/clean/adunmigration"
 	"github.com/rancher/rancher/pkg/agent/cluster"
+	"github.com/rancher/rancher/pkg/agent/ldapuuid"
 	"github.com/rancher/rancher/pkg/agent/node"
 	"github.com/rancher/rancher/pkg/agent/rancher"
 	"github.com/rancher/rancher/pkg/features"
@@ -84,6 +85,9 @@ func main() {
 			dryrun := os.Getenv("DRY_RUN") == "true"
 			deleteMissingUsers := os.Getenv("AD_DELETE_MISSING_GUID_USERS") == "true"
 			err = adunmigration.UnmigrateAdGUIDUsers(nil, dryrun, deleteMissingUsers)
+		} else if os.Getenv("AD_GUID_TEST") == "true" {
+			dryrun := os.Getenv("DRY_RUN") == "true"
+			err = ldapuuid.Run(nil, dryrun)
 		} else {
 			err = run(ctx)
 		}

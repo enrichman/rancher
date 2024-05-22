@@ -392,6 +392,22 @@ func (m *userManager) GetKubeconfigToken(clusterName, tokenName, description, ki
 	return token, createdTokenValue, nil
 }
 
+func (m *userManager) GetUserFromPrincipal(principalName string) (*v3.User, error) {
+	// First check the local cache
+	user, err := m.checkCache(principalName)
+	if err != nil {
+		return nil, err
+	}
+
+	if user != nil {
+		return user, nil
+	}
+
+	// Not in cache, query API by label
+	user, _, err = m.checkLabels(principalName)
+	return user, err
+}
+
 func (m *userManager) EnsureUser(principalName, displayName string) (*v3.User, error) {
 	var user *v3.User
 	var err error
