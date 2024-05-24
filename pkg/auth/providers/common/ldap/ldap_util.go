@@ -142,12 +142,15 @@ func GetUserSearchAttributes(memberOfAttribute, ObjectClass string, config *v32.
 
 func GetGroupSearchAttributes(config *v32.ActiveDirectoryConfig, searchAttributes ...string) []string {
 	groupSeachAttributes := []string{
+		"objectGUID",
+		"entryUUID",
 		config.GroupObjectClass,
 		config.UserLoginAttribute,
 		config.GroupNameAttribute,
-		config.GroupSearchAttribute}
-	groupSeachAttributes = append(groupSeachAttributes, searchAttributes...)
-	return groupSeachAttributes
+		config.GroupSearchAttribute,
+	}
+
+	return append(groupSeachAttributes, searchAttributes...)
 }
 
 func GetUserSearchAttributesForLDAP(ObjectClass string, config *v3.LdapConfig) []string {
@@ -165,13 +168,16 @@ func GetUserSearchAttributesForLDAP(ObjectClass string, config *v3.LdapConfig) [
 }
 
 func GetGroupSearchAttributesForLDAP(ObjectClass string, config *v3.LdapConfig) []string {
-	groupSeachAttributes := []string{config.GroupMemberUserAttribute,
+	return []string{
+		config.GroupMemberUserAttribute,
 		ObjectClass,
+		"objectGUID",
+		"entryUUID",
 		config.GroupObjectClass,
 		config.UserLoginAttribute,
 		config.GroupNameAttribute,
-		config.GroupSearchAttribute}
-	return groupSeachAttributes
+		config.GroupSearchAttribute,
+	}
 }
 
 func AuthenticateServiceAccountUser(serviceAccountPassword string, serviceAccountUsername string, defaultLoginDomain string, lConn ldapv3.Client) error {
