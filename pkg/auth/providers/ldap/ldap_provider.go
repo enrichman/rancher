@@ -295,12 +295,32 @@ func (p *ldapProvider) getLDAPConfig(genericClient objectclient.GenericClient) (
 }
 
 func (p *ldapProvider) CanAccessWithGroupProviders(userPrincipalID string, groupPrincipals []v3.Principal) (bool, error) {
-	config, _, err := p.getLDAPConfig(p.authConfigs.ObjectClient().UnstructuredClient())
+	config, caPool, err := p.getLDAPConfig(p.authConfigs.ObjectClient().UnstructuredClient())
 	if err != nil {
 		logrus.Errorf("Error fetching ldap config: %v", err)
 		return false, err
 	}
-	allowed, err := p.userMGR.CheckAccess(config.AccessMode, config.AllowedPrincipalIDs, userPrincipalID, groupPrincipals)
+
+	lConn, err := ldap.Connect(config, caPool)
+	if err != nil {
+		logrus.Warnf("ldap CanAccessWithGroupProviders failed to connect to ldap: %s\n", err)
+		return false, err
+	}
+	defer lConn.Close()
+
+	allowedAliases := []string{}
+	for _, allowedPrincipal := range config.AllowedPrincipalIDs {
+		aliases, err := ldap.GatherAliases(lConn, ObjectClass, config.UserObjectClass, allowedPrincipal, config.GetUserSearchAttributes())
+		if err != nil {
+			logrus.Warnf("failed to GatherAliases for allowedPrincipal '%s': %s\n", allowedPrincipal, err)
+			continue
+		}
+		allowedAliases = append(allowedAliases, aliases...)
+	}
+
+	allowedPrincipals := append(allowedAliases, config.AllowedPrincipalIDs...)
+
+	allowed, err := p.userMGR.CheckAccess(config.AccessMode, allowedPrincipals, userPrincipalID, groupPrincipals)
 	if err != nil {
 		return false, err
 	}
@@ -349,13 +369,13 @@ func (p *ldapProvider) samlSearchGetPrincipal(
 			ObjectClass, config.UserObjectClass, config.UserLoginAttribute, ldapv3.EscapeFilter(externalID))
 		searchRequest = ldapv3.NewSearchRequest(config.UserSearchBase,
 			ldapv3.ScopeWholeSubtree, ldapv3.NeverDerefAliases, 0, 0, false,
-			filter, ldap.GetUserSearchAttributesForLDAP(ObjectClass, config), nil)
+			filter, config.GetUserSearchAttributes(ObjectClass), nil)
 	} else {
 		filter = fmt.Sprintf("(&(%v=%v)(%v=%v))",
 			ObjectClass, config.GroupObjectClass, config.GroupDNAttribute, ldapv3.EscapeFilter(externalID))
 		searchRequest = ldapv3.NewSearchRequest(config.GroupSearchBase,
 			ldapv3.ScopeWholeSubtree, ldapv3.NeverDerefAliases, 0, 0, false,
-			filter, ldap.GetGroupSearchAttributesForLDAP(ObjectClass, config), nil)
+			filter, config.GetGroupSearchAttributes(ObjectClass), nil)
 	}
 
 	result, err := lConn.Search(searchRequest)
