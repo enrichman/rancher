@@ -11,7 +11,6 @@ import (
 	ldapv3 "github.com/go-ldap/ldap/v3"
 	"github.com/pkg/errors"
 	"github.com/rancher/norman/httperror"
-	v32 "github.com/rancher/rancher/pkg/apis/management.cattle.io/v3"
 	v3 "github.com/rancher/rancher/pkg/generated/norman/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -128,56 +127,6 @@ func GetAttributeValuesByName(search []*ldapv3.EntryAttribute, attributeName str
 		}
 	}
 	return []string{}
-}
-
-func GetUserSearchAttributes(memberOfAttribute, ObjectClass string, config *v32.ActiveDirectoryConfig) []string {
-	userSearchAttributes := []string{memberOfAttribute,
-		ObjectClass,
-		config.UserObjectClass,
-		config.UserLoginAttribute,
-		config.UserNameAttribute,
-		config.UserEnabledAttribute}
-	return userSearchAttributes
-}
-
-func GetGroupSearchAttributes(config *v32.ActiveDirectoryConfig, searchAttributes ...string) []string {
-	groupSeachAttributes := []string{
-		"objectGUID",
-		"entryUUID",
-		config.GroupObjectClass,
-		config.UserLoginAttribute,
-		config.GroupNameAttribute,
-		config.GroupSearchAttribute,
-	}
-
-	return append(groupSeachAttributes, searchAttributes...)
-}
-
-func GetUserSearchAttributesForLDAP(ObjectClass string, config *v3.LdapConfig) []string {
-	return []string{
-		"dn",
-		ObjectClass,
-		"objectGUID",
-		"entryUUID",
-		config.UserMemberAttribute,
-		config.UserObjectClass,
-		config.UserLoginAttribute,
-		config.UserNameAttribute,
-		config.UserEnabledAttribute,
-	}
-}
-
-func GetGroupSearchAttributesForLDAP(ObjectClass string, config *v3.LdapConfig) []string {
-	return []string{
-		config.GroupMemberUserAttribute,
-		ObjectClass,
-		"objectGUID",
-		"entryUUID",
-		config.GroupObjectClass,
-		config.UserLoginAttribute,
-		config.GroupNameAttribute,
-		config.GroupSearchAttribute,
-	}
 }
 
 func AuthenticateServiceAccountUser(serviceAccountPassword string, serviceAccountUsername string, defaultLoginDomain string, lConn ldapv3.Client) error {
@@ -303,6 +252,44 @@ func GatherParentGroups(groupPrincipal v3.Principal, searchDomain string, groupS
 	return nil
 }
 
+func GatherAliases(lConn ldapv3.Client, objectClass, userObjectClass, main string, searchAttributes []string) ([]string, error) {
+	parts := strings.Split(main, "://")
+	userDN := parts[1]
+
+	searchRequest := ldapv3.NewSearchRequest(
+		userDN,
+		ldapv3.ScopeWholeSubtree,
+		ldapv3.NeverDerefAliases,
+		0, 0, false,
+		fmt.Sprintf("(%v=%v)", objectClass, userObjectClass),
+		searchAttributes,
+		nil,
+	)
+
+	result, err := lConn.Search(searchRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(result.Entries) == 0 {
+		return nil, errors.Errorf("no entry found fo id %v", main)
+	}
+
+	aliases := []string{}
+
+	objectGUID := result.Entries[0].GetAttributeValue("objectGUID")
+	if objectGUID != "" {
+		aliases = append(aliases, fmt.Sprintf("%s://objectGUID=%s", parts[0], objectGUID))
+	}
+
+	entryUUID := result.Entries[0].GetAttributeValue("entryUUID")
+	if entryUUID != "" {
+		aliases = append(aliases, fmt.Sprintf("%s://entryUUID=%s", parts[0], entryUUID))
+	}
+
+	return aliases, nil
+}
+
 func FindNonDuplicateBetweenGroupPrincipals(newGroupPrincipals []v3.Principal, groupPrincipals []v3.Principal, nonDupGroupPrincipals []v3.Principal) []v3.Principal {
 	for _, gp := range newGroupPrincipals {
 		counter := 0
@@ -321,13 +308,6 @@ func FindNonDuplicateBetweenGroupPrincipals(newGroupPrincipals []v3.Principal, g
 	return nonDupGroupPrincipals
 }
 
-func Min(a int, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func NewCAPool(cert string) (*x509.CertPool, error) {
 	pool, err := x509.SystemCertPool()
 	if err != nil {
@@ -335,19 +315,4 @@ func NewCAPool(cert string) (*x509.CertPool, error) {
 	}
 	pool.AppendCertsFromPEM([]byte(cert))
 	return pool, nil
-}
-
-func ValidateLdapConfig(ldapConfig *v3.LdapConfig, certpool *x509.CertPool) (bool, error) {
-	if len(ldapConfig.Servers) < 1 {
-		return false, nil
-	}
-
-	lConn, err := Connect(ldapConfig, certpool)
-	if err != nil {
-		return false, err
-	}
-	defer lConn.Close()
-
-	logrus.Debugf("validated ldap configuration: %s", strings.Join(ldapConfig.Servers, ","))
-	return true, nil
 }

@@ -51,7 +51,7 @@ func (p *ldapProvider) loginUser(lConn ldapv3.Client, credential *v32.BasicLogin
 		ldapv3.NeverDerefAliases,
 		0, 0, false,
 		filter,
-		ldap.GetUserSearchAttributesForLDAP(ObjectClass, config),
+		config.GetUserSearchAttributes(ObjectClass),
 		nil,
 	)
 
@@ -98,7 +98,18 @@ func (p *ldapProvider) loginUser(lConn ldapv3.Client, credential *v32.BasicLogin
 		return v3.Principal{}, nil, err
 	}
 
-	allowed, err := p.userMGR.CheckAccess(config.AccessMode, config.AllowedPrincipalIDs, userPrincipal.Name, groupPrincipals)
+	allowedAliases := []string{}
+	for _, allowedPrincipal := range config.AllowedPrincipalIDs {
+		aliases, err := ldap.GatherAliases(lConn, ObjectClass, config.UserObjectClass, allowedPrincipal, config.GetUserSearchAttributes())
+		if err != nil {
+			logrus.Warnf("failed to GatherAliases for allowedPrincipal '%s': %s\n", allowedPrincipal, err)
+			continue
+		}
+		allowedAliases = append(allowedAliases, aliases...)
+	}
+	allowedPrincipals := append(allowedAliases, config.AllowedPrincipalIDs...)
+
+	allowed, err := p.userMGR.CheckAccess(config.AccessMode, allowedPrincipals, userPrincipal.Name, groupPrincipals)
 	if err != nil {
 		return v3.Principal{}, nil, err
 	}
@@ -152,7 +163,7 @@ func (p *ldapProvider) getPrincipalsFromSearchResult(result *ldapv3.SearchResult
 
 	if len(userMemberAttribute) > 0 {
 		for i := 0; i < len(userMemberAttribute); i += 50 {
-			batchGroupDN := userMemberAttribute[i:ldap.Min(i+50, len(userMemberAttribute))]
+			batchGroupDN := userMemberAttribute[i:min(i+50, len(userMemberAttribute))]
 			filter := fmt.Sprintf("(%v=%v)", ObjectClass, config.GroupObjectClass)
 			query := "(|"
 			for _, gdn := range batchGroupDN {
@@ -340,7 +351,7 @@ func (p *ldapProvider) getPrincipal(distinguishedName string, scope string, conf
 			search = ldapv3.NewSearchRequest(distinguishedName,
 				ldapv3.ScopeBaseObject, ldapv3.NeverDerefAliases, 0, 0, false,
 				filter,
-				ldap.GetUserSearchAttributesForLDAP(ObjectClass, config), nil)
+				config.GetUserSearchAttributes(ObjectClass), nil)
 		} else {
 			filter += fmt.Sprintf("(entryUUID=%v)", uuid)
 			filter = fmt.Sprintf("(&%s)", filter)
@@ -348,14 +359,14 @@ func (p *ldapProvider) getPrincipal(distinguishedName string, scope string, conf
 			search = ldapv3.NewSearchRequest(config.UserSearchBase,
 				ldapv3.ScopeWholeSubtree, ldapv3.NeverDerefAliases, 0, 0, false,
 				filter,
-				ldap.GetUserSearchAttributesForLDAP(ObjectClass, config), nil)
+				config.GetUserSearchAttributes(ObjectClass), nil)
 		}
 
 	} else {
 		search = ldapv3.NewSearchRequest(distinguishedName,
 			ldapv3.ScopeBaseObject, ldapv3.NeverDerefAliases, 0, 0, false,
 			filter,
-			ldap.GetGroupSearchAttributesForLDAP(ObjectClass, config), nil)
+			config.GetGroupSearchAttributes(ObjectClass), nil)
 	}
 
 	result, err := lConn.Search(search)
@@ -459,7 +470,7 @@ func (p *ldapProvider) searchLdap(query string, scope string, config *v3.LdapCon
 		search = ldapv3.NewSearchRequest(searchDomain,
 			ldapv3.ScopeWholeSubtree, ldapv3.NeverDerefAliases, 0, 0, false,
 			query,
-			ldap.GetUserSearchAttributesForLDAP(ObjectClass, config), nil)
+			config.GetUserSearchAttributes(ObjectClass), nil)
 	} else {
 		if config.GroupSearchBase != "" {
 			searchDomain = config.GroupSearchBase
@@ -467,7 +478,7 @@ func (p *ldapProvider) searchLdap(query string, scope string, config *v3.LdapCon
 		search = ldapv3.NewSearchRequest(searchDomain,
 			ldapv3.ScopeWholeSubtree, ldapv3.NeverDerefAliases, 0, 0, false,
 			query,
-			ldap.GetGroupSearchAttributesForLDAP(ObjectClass, config), nil)
+			config.GetGroupSearchAttributes(ObjectClass), nil)
 	}
 
 	// Bind before query
@@ -581,7 +592,7 @@ func (p *ldapProvider) RefetchGroupPrincipals(principalID string, secret string)
 		search = ldapv3.NewSearchRequest(distinguishedName,
 			ldapv3.ScopeBaseObject, ldapv3.NeverDerefAliases, 0, 0, false,
 			filter,
-			ldap.GetUserSearchAttributesForLDAP(ObjectClass, config), nil)
+			config.GetUserSearchAttributes(ObjectClass), nil)
 	} else {
 		filter += fmt.Sprintf("(entryUUID=%v)", uuid)
 		filter = fmt.Sprintf("(&%s)", filter)
@@ -589,7 +600,7 @@ func (p *ldapProvider) RefetchGroupPrincipals(principalID string, secret string)
 		search = ldapv3.NewSearchRequest(config.UserSearchBase,
 			ldapv3.ScopeWholeSubtree, ldapv3.NeverDerefAliases, 0, 0, false,
 			filter,
-			ldap.GetUserSearchAttributesForLDAP(ObjectClass, config), nil)
+			config.GetUserSearchAttributes(ObjectClass), nil)
 	}
 
 	result, err := lConn.Search(search)
