@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html"
 	"os"
+	"slices"
 	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -82,7 +83,7 @@ func Run(clientConfig *restclient.Config, dryRun bool) error {
 			if err != nil {
 				return err
 			}
-			usersToExtend[i].UUID = uuid
+			user.UUID = uuid
 		}
 
 		// add label to users with same dn hash
@@ -95,18 +96,31 @@ func Run(clientConfig *restclient.Config, dryRun bool) error {
 		}
 
 		for _, u := range users.Items {
-			encodedPrincipalID := encodeBase32(fmt.Sprintf("%s_user://entryUUID=%s", "openldap", user.UUID))
+			needsUpdate := false
 
-			// if not found, update
+			plainPrincipalID := fmt.Sprintf("%s_user://entryUUID=%s", "openldap", user.UUID)
+			encodedPrincipalID := encodeBase32(plainPrincipalID)
+
+			if !slices.Contains(u.PrincipalIDs, plainPrincipalID) {
+				u.PrincipalIDs = append(u.PrincipalIDs, plainPrincipalID)
+				needsUpdate = true
+			}
+
 			if _, found := u.Labels[encodedPrincipalID]; !found {
 				u.Labels[encodedPrincipalID] = "hashed-principal-name"
+				needsUpdate = true
+			}
 
-				userUpdated, err := sc.Management.Users("").Update(&u)
+			// update only if needed
+			if needsUpdate {
+				_, err := sc.Management.Users("").Update(&u)
 				if err != nil {
 					logrus.Errorf("[%v] unable to userUpdated user list: %v", migrateAdUserOperation, err)
 					return err
 				}
-				fmt.Println(userUpdated.Labels)
+				fmt.Println("user updated", u.Name)
+			} else {
+				fmt.Println("not updating", u.Name)
 			}
 		}
 	}
