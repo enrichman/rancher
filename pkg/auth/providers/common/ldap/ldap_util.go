@@ -166,9 +166,9 @@ func AttributesToPrincipal(attribs []*ldapv3.EntryAttribute, dnStr, scope, provi
 				}
 			}
 
-			if attr.Name == "objectGUID" || attr.Name == "entryUUID" {
-				externalID = attr.Name + "=" + attr.Values[0]
-			}
+			// if attr.Name == "objectGUID" || attr.Name == "entryUUID" {
+			// 	externalID = attr.Name + "=" + attr.Values[0]
+			// }
 		}
 		if login == "" {
 			login = accountName

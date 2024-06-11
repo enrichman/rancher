@@ -158,6 +158,19 @@ func (p *ldapProvider) getPrincipalsFromSearchResult(result *ldapv3.SearchResult
 		return v3.Principal{}, groupPrincipals, err
 	}
 
+	// check if legacy
+	legacyName := fmt.Sprintf("openldap_user://%s", result.Entries[0].DN)
+	uu, _ := p.userMGR.GetUserByPrincipalID(legacyName)
+	if uu != nil {
+		user.ObjectMeta.Name = legacyName
+	} else {
+		entryUUID := ldap.GetAttributeValuesByName(entry.Attributes, "entryUUID")[0]
+		entryUUIDName := fmt.Sprintf("openldap_user://entryUUID=%s", entryUUID)
+		uu, _ := p.userMGR.GetUserByPrincipalID(entryUUIDName)
+		fmt.Println(uu) // we don't care!
+		user.ObjectMeta.Name = entryUUIDName
+	}
+
 	userPrincipal = *user
 	userDN := result.Entries[0].DN
 
@@ -322,7 +335,21 @@ func (p *ldapProvider) getPrincipal(distinguishedName string, scope string, conf
 		return nil, fmt.Errorf("Error in ldap bind: %v", err)
 	}
 
+	//var userFound bool
 	if strings.EqualFold("user", entityType) {
+
+		// u, err := p.userMGR.GetUserByPrincipalID(scope + "://" + distinguishedName)
+		// if err != nil {
+		// 	return nil, fmt.Errorf("getting user by legacy principalID [%s]: %v", scope+"://"+distinguishedName, err)
+		// }
+
+		// // user found -> it's an old one
+		// userFound = u != nil
+
+		// search = ldapv3.NewSearchRequest(distinguishedName,
+		// 	ldapv3.ScopeBaseObject, ldapv3.NeverDerefAliases, 0, 0, false,
+		// 	filter,
+		// 	config.GetUserSearchAttributes(ObjectClass), nil)
 
 		// if dn is NOT using GUID check if we can find an already "migrated" existing user
 		var uuid string
@@ -389,6 +416,10 @@ func (p *ldapProvider) getPrincipal(distinguishedName string, scope string, conf
 	if !p.permissionCheck(entry.Attributes, config) {
 		return nil, fmt.Errorf("Permission denied")
 	}
+
+	// if !userFound {
+	// 	distinguishedName = "entryUUID=" + ldap.GetAttributeValuesByName(entryAttributes, "entryUUID")[0]
+	// }
 
 	principal, err := ldap.AttributesToPrincipal(entryAttributes, distinguishedName, scope, p.providerName, config.UserObjectClass, config.UserNameAttribute, config.UserLoginAttribute, config.GroupObjectClass, config.GroupNameAttribute)
 	if err != nil {
@@ -514,6 +545,17 @@ func (p *ldapProvider) searchLdap(query string, scope string, config *v3.LdapCon
 			}
 		}
 
+		principalID := fmt.Sprintf("%s://%s", scope, externalID)
+		u, err := p.userMGR.GetUserByPrincipalID(principalID)
+		// user doesn't exist: use the UUID as externalID
+		if err == nil && u == nil {
+			entryUUIDs := ldap.GetAttributeValuesByName(entry.Attributes, "entryUUID")
+			if len(entryUUIDs) > 0 {
+				entryUUID := entryUUIDs[0]
+				externalID = "entryUUID=" + entryUUID
+			}
+		}
+
 		principal, err := ldap.AttributesToPrincipal(
 			entry.Attributes,
 			externalID,
@@ -527,6 +569,7 @@ func (p *ldapProvider) searchLdap(query string, scope string, config *v3.LdapCon
 		if err != nil {
 			return []v3.Principal{}, err
 		}
+
 		principals = append(principals, *principal)
 	}
 
