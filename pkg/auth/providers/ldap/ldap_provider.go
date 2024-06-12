@@ -216,7 +216,7 @@ func (p *ldapProvider) GetPrincipal(principalID string, token v3.Token) (v3.Prin
 	}
 
 	// restore principalID (?) :(
-	principal.ObjectMeta.Name = principalID
+	// principal.ObjectMeta.Name = principalID
 
 	return *principal, err
 }

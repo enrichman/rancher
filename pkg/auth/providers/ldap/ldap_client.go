@@ -3,7 +3,6 @@ package ldap
 import (
 	"crypto/x509"
 	"fmt"
-	"html"
 	"reflect"
 	"strings"
 
@@ -66,11 +65,6 @@ func (p *ldapProvider) loginUser(lConn ldapv3.Client, credential *v32.BasicLogin
 		return v3.Principal{}, nil, fmt.Errorf("ldap user search found more than one result")
 	}
 
-	entry := result.Entries[0]
-	guidString := html.EscapeString(fmt.Sprintf("%x", entry.GetRawAttributeValue("objectGUID")))
-	uuidString := html.EscapeString(fmt.Sprintf("%x", entry.GetRawAttributeValue("entryUUID")))
-	fmt.Println(guidString, uuidString)
-
 	userDN := result.Entries[0].DN //userDN is externalID
 	err = lConn.Bind(userDN, password)
 	if err != nil {
@@ -98,7 +92,7 @@ func (p *ldapProvider) loginUser(lConn ldapv3.Client, credential *v32.BasicLogin
 		return v3.Principal{}, nil, err
 	}
 
-	allowedAliases := []string{}
+	var allowedAliases []string
 	for _, allowedPrincipal := range config.AllowedPrincipalIDs {
 		aliases, err := ldap.GatherAliases(lConn, ObjectClass, config.UserObjectClass, allowedPrincipal, config.GetUserSearchAttributes())
 		if err != nil {
@@ -268,8 +262,6 @@ func (p *ldapProvider) getPrincipalsFromSearchResult(result *ldapv3.SearchResult
 }
 
 func (p *ldapProvider) getPrincipal(distinguishedName string, scope string, config *v3.LdapConfig, caPool *x509.CertPool) (*v3.Principal, error) {
-	var principalIDs []string
-
 	var search *ldapv3.SearchRequest
 	var filter string
 	if (scope != p.userScope) && (scope != p.groupScope) {
@@ -335,22 +327,7 @@ func (p *ldapProvider) getPrincipal(distinguishedName string, scope string, conf
 		return nil, fmt.Errorf("Error in ldap bind: %v", err)
 	}
 
-	//var userFound bool
 	if strings.EqualFold("user", entityType) {
-
-		// u, err := p.userMGR.GetUserByPrincipalID(scope + "://" + distinguishedName)
-		// if err != nil {
-		// 	return nil, fmt.Errorf("getting user by legacy principalID [%s]: %v", scope+"://"+distinguishedName, err)
-		// }
-
-		// // user found -> it's an old one
-		// userFound = u != nil
-
-		// search = ldapv3.NewSearchRequest(distinguishedName,
-		// 	ldapv3.ScopeBaseObject, ldapv3.NeverDerefAliases, 0, 0, false,
-		// 	filter,
-		// 	config.GetUserSearchAttributes(ObjectClass), nil)
-
 		// if dn is NOT using GUID check if we can find an already "migrated" existing user
 		var uuid string
 		if strings.HasPrefix(distinguishedName, "entryUUID=") {
@@ -363,7 +340,6 @@ func (p *ldapProvider) getPrincipal(distinguishedName string, scope string, conf
 
 			// user found, look for the entryUUID
 			if u != nil {
-				principalIDs = u.PrincipalIDs
 				for _, principalID := range u.PrincipalIDs {
 					if strings.Contains(principalID, "entryUUID") {
 						uuid = strings.TrimPrefix(principalID, scope+"://entryUUID=")
@@ -417,21 +393,9 @@ func (p *ldapProvider) getPrincipal(distinguishedName string, scope string, conf
 		return nil, fmt.Errorf("Permission denied")
 	}
 
-	// if !userFound {
-	// 	distinguishedName = "entryUUID=" + ldap.GetAttributeValuesByName(entryAttributes, "entryUUID")[0]
-	// }
-
 	principal, err := ldap.AttributesToPrincipal(entryAttributes, distinguishedName, scope, p.providerName, config.UserObjectClass, config.UserNameAttribute, config.UserLoginAttribute, config.GroupObjectClass, config.GroupNameAttribute)
 	if err != nil {
 		return nil, err
-	}
-
-	// store legacy principalIDs
-	if len(principalIDs) > 0 {
-		if principal.ExtraInfo == nil {
-			principal.ExtraInfo = map[string]string{}
-		}
-		principal.ExtraInfo["principalIDs"] = strings.Join(principalIDs, "|") // :(
 	}
 
 	return principal, nil
