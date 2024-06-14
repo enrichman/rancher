@@ -12,6 +12,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rancher/norman/httperror"
 	"github.com/rancher/norman/types/slice"
+	"github.com/rancher/rancher/pkg/auth/providers/activedirectory/guid"
 	"github.com/rancher/rancher/pkg/auth/providers/common/ldap"
 	v3 "github.com/rancher/rancher/pkg/generated/norman/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
@@ -184,6 +185,24 @@ func (p *adProvider) getPrincipalsFromSearchResult(result *ldapv3.SearchResult, 
 	user, err := ldap.AttributesToPrincipal(entry.Attributes, result.Entries[0].DN, UserScope, Name, config.UserObjectClass, config.UserNameAttribute, config.UserLoginAttribute, config.GroupObjectClass, config.GroupNameAttribute)
 	if err != nil {
 		return userPrincipal, groupPrincipals, err
+	}
+
+	// check if legacy
+	legacyName := fmt.Sprintf("activedirectory_user://%s", result.Entries[0].DN)
+	uu, _ := p.userMGR.GetUserByPrincipalID(legacyName)
+	if uu != nil {
+		user.ObjectMeta.Name = legacyName
+	} else {
+		encodedGUID := entry.GetRawAttributeValue("objectGUID")
+		parsedGUID, err := guid.Parse(encodedGUID)
+		if err != nil {
+			return userPrincipal, groupPrincipals, err
+		}
+
+		objectGUIDName := fmt.Sprintf("activedirectory_user://objectGUID=%s", parsedGUID)
+		uu, _ := p.userMGR.GetUserByPrincipalID(objectGUIDName)
+		fmt.Println(uu) // we don't care!
+		user.ObjectMeta.Name = objectGUIDName
 	}
 
 	userPrincipal = *user
@@ -372,10 +391,47 @@ func (p *adProvider) getPrincipal(distinguishedName string, scope string, config
 	}
 
 	if strings.EqualFold(UserScope, scope) {
-		search = ldapv3.NewSearchRequest(distinguishedName,
-			ldapv3.ScopeBaseObject, ldapv3.NeverDerefAliases, 0, 0, false,
-			filter,
-			config.GetUserSearchAttributes(MemberOfAttribute, ObjectClass), nil)
+		// if dn is NOT using GUID check if we can find an already "migrated" existing user
+		var uuid string
+		if strings.HasPrefix(distinguishedName, "objectGUID=") {
+			uuid = strings.TrimPrefix(distinguishedName, "objectGUID=")
+		} else {
+			u, err := p.userMGR.GetUserByPrincipalID(scope + "://" + distinguishedName)
+			if err != nil {
+				return nil, fmt.Errorf("getting user by legacy principalID [%s]: %v", scope+"://"+distinguishedName, err)
+			}
+
+			// user found, look for the objectGUID
+			if u != nil {
+				for _, principalID := range u.PrincipalIDs {
+					if strings.Contains(principalID, "objectGUID") {
+						uuid = strings.TrimPrefix(principalID, scope+"://objectGUID=")
+						break
+					}
+				}
+			}
+		}
+
+		// uuid not found (?), try legacy search
+		if uuid == "" {
+			search = ldapv3.NewSearchRequest(distinguishedName,
+				ldapv3.ScopeBaseObject, ldapv3.NeverDerefAliases, 0, 0, false,
+				filter,
+				config.GetUserSearchAttributes(ObjectClass), nil)
+		} else {
+			encoded, err := guid.Encode(uuid)
+			if err != nil {
+				return nil, fmt.Errorf("encoding guid from UUID [%s]: %w", uuid, err)
+			}
+
+			filter += fmt.Sprintf("(objectGUID=%s)", guid.Escape(encoded))
+			filter = fmt.Sprintf("(&%s)", filter)
+
+			search = ldapv3.NewSearchRequest(config.UserSearchBase,
+				ldapv3.ScopeWholeSubtree, ldapv3.NeverDerefAliases, 0, 0, false,
+				filter,
+				config.GetUserSearchAttributes(ObjectClass), nil)
+		}
 	} else {
 		search = ldapv3.NewSearchRequest(distinguishedName,
 			ldapv3.ScopeBaseObject, ldapv3.NeverDerefAliases, 0, 0, false,
@@ -490,8 +546,20 @@ func (p *adProvider) searchLdap(query string, scope string, config *v32.ActiveDi
 	}
 
 	for i := 0; i < len(results.Entries); i++ {
+		externalID := results.Entries[i].DN
 		entry := results.Entries[i]
-		principal, err := ldap.AttributesToPrincipal(entry.Attributes, results.Entries[i].DN, scope, Name, config.UserObjectClass, config.UserNameAttribute, config.UserLoginAttribute, config.GroupObjectClass, config.GroupNameAttribute)
+
+		principalID := fmt.Sprintf("%s://%s", scope, externalID)
+		u, err := p.userMGR.GetUserByPrincipalID(principalID)
+		// user doesn't exist: use the UUID as externalID
+		if err == nil && u == nil {
+			parsedGUID, err := guid.Parse(entry.GetRawAttributeValue("objectGUID"))
+			if err == nil {
+				externalID = "objectGUID=" + parsedGUID
+			}
+		}
+
+		principal, err := ldap.AttributesToPrincipal(entry.Attributes, externalID, scope, Name, config.UserObjectClass, config.UserNameAttribute, config.UserLoginAttribute, config.GroupObjectClass, config.GroupNameAttribute)
 		if err != nil {
 			logrus.Errorf("Error translating search result: %v", err)
 			continue
