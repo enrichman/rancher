@@ -8,13 +8,12 @@ import (
 	"github.com/rancher/rancher/pkg/auth/providers/activedirectory/guid"
 )
 
-func TestGuid(t *testing.T) {
+func TestParse(t *testing.T) {
 	tt := []struct {
-		name               string
-		encoded            []byte
-		expectedUUID       string
-		expectedParseErr   string
-		expectedEncodedErr string
+		name         string
+		encoded      []byte
+		expectedUUID string
+		expectedErr  string
 	}{
 		{
 			name:         "valid objectGUID 1",
@@ -32,10 +31,9 @@ func TestGuid(t *testing.T) {
 			expectedUUID: "4e4e4e4e-4e4e-4e4e-4e4e-4e4e4e4e4e4e",
 		},
 		{
-			name:               "objectGUID with invalid length",
-			encoded:            []byte("\xaf\xf6\x0e\x96\xe3"),
-			expectedParseErr:   "invalid length",
-			expectedEncodedErr: "invalid length",
+			name:        "objectGUID with invalid length",
+			encoded:     []byte("\xaf\xf6\x0e\x96\xe3"),
+			expectedErr: "invalid length",
 		},
 	}
 
@@ -44,22 +42,107 @@ func TestGuid(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			parsedGUID, err := guid.Parse(tc.encoded)
 
-			if tc.expectedParseErr != "" {
-				assert.ErrorContains(t, err, tc.expectedParseErr)
+			if tc.expectedErr != "" {
+				assert.ErrorContains(t, err, tc.expectedErr)
 			} else {
 				assert.Nil(t, err)
 				assert.Equal(t, tc.expectedUUID, parsedGUID)
 			}
+		})
+	}
+}
 
-			// test that encoding back works returning the same bytes
-			encoded, err := guid.Encode(parsedGUID)
+func TestEncode(t *testing.T) {
+	tt := []struct {
+		name                string
+		uuid                string
+		expectedEncodedGUID []byte
+		expectedErr         string
+	}{
+		{
+			name:                "valid uuid 1",
+			uuid:                "3d0ef6af-965b-44e3-8fea-b23a7d3aa6cb",
+			expectedEncodedGUID: []byte("\xaf\xf6\x0e=[\x96\xe3D\x8f\xea\xb2:}:\xa6\xcb"),
+		},
+		{
+			name:                "valid uuid 2",
+			uuid:                "75593fbf-57d1-4c55-872d-9372ef0fdd15",
+			expectedEncodedGUID: []byte("\xbf?Yu\xd1WUL\x87-\x93r\xef\x0f\xdd\x15"),
+		},
+		{
+			name:                "valid uuid with N char",
+			uuid:                "4e4e4e4e-4e4e-4e4e-4e4e-4e4e4e4e4e4e",
+			expectedEncodedGUID: []byte("\x4e\x4e\x4e\x4e\x4e\x4e\x4e\x4e\x4e\x4e\x4e\x4e\x4e\x4e\x4e\x4e"),
+		},
+		{
+			name:        "invalid uuid",
+			uuid:        "75593fbf",
+			expectedErr: "invalid format",
+		},
+		{
+			name:        "empty uuid",
+			uuid:        "",
+			expectedErr: "invalid format",
+		},
+	}
 
-			if tc.expectedEncodedErr != "" {
-				assert.Error(t, err, tc.expectedEncodedErr)
+	for _, tc := range tt {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			encoded, err := guid.Encode(tc.uuid)
+
+			if tc.expectedErr != "" {
+				assert.ErrorContains(t, err, tc.expectedErr)
 			} else {
 				assert.Nil(t, err)
-				assert.Equal(t, tc.encoded, encoded)
+				assert.Equal(t, tc.expectedEncodedGUID, encoded)
 			}
+		})
+	}
+}
+
+func TestEscape(t *testing.T) {
+	tt := []struct {
+		name        string
+		objectGUID  []byte
+		escapedGUID string
+	}{
+		{
+			name:        "valid objectGUID 1",
+			objectGUID:  []byte("\xaf\xf6\x0e=[\x96\xe3D\x8f\xea\xb2:}:\xa6\xcb"),
+			escapedGUID: "\\af\\f6\\0e\\3d\\5b\\96\\e3\\44\\8f\\ea\\b2\\3a\\7d\\3a\\a6\\cb",
+		},
+		{
+			name:        "valid objectGUID 2",
+			objectGUID:  []byte("\xbf?Yu\xd1WUL\x87-\x93r\xef\x0f\xdd\x15"),
+			escapedGUID: "\\bf\\3f\\59\\75\\d1\\57\\55\\4c\\87\\2d\\93\\72\\ef\\0f\\dd\\15",
+		},
+		{
+			name:        "valid objectGUID with N char",
+			objectGUID:  []byte("\x4e\x4e\x4e\x4e\x4e\x4e\x4e\x4e\x4e\x4e\x4e\x4e\x4e\x4e\x4e\x4e"),
+			escapedGUID: "\\4e\\4e\\4e\\4e\\4e\\4e\\4e\\4e\\4e\\4e\\4e\\4e\\4e\\4e\\4e\\4e",
+		},
+		{
+			name:        "short objectGUID",
+			objectGUID:  []byte("a"),
+			escapedGUID: "\\61",
+		},
+		{
+			name:        "empty objectGUID",
+			objectGUID:  []byte(""),
+			escapedGUID: "",
+		},
+		{
+			name:        "nil objectGUID",
+			escapedGUID: "",
+		},
+	}
+
+	for _, tc := range tt {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			escaped := guid.Escape(tc.objectGUID)
+			assert.Equal(t, tc.escapedGUID, escaped)
 		})
 	}
 }
