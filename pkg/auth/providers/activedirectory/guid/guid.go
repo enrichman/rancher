@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	// order: [3] [2] [1] [0] - [5] [4] - [7] [6] - [8] [9] - [10] [11] [12] [13] [14] [15]
+	// order defines the bytes arrangement of the original binary objectGUID
 	order     = []int{3, 2, 1, 0, 5, 4, 7, 6, 8, 9, 10, 11, 12, 13, 14, 15}
 	uuidRegex = regexp.MustCompile("(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 )
@@ -18,9 +18,12 @@ var (
 // parsing the encoded binary of an Active Directory objectGUID attribute.
 // The encoded byte array should have a length of 16 bytes.
 //
-// The objectGUID byte array is ordered like this:
+// The Microsoft dotnet GUID is a rearrangement of the original binary byte array in this particular order:
 //
-//	[3] [2] [1] [0] - [5] [4] - [7] [6] - [8] [9] - [10] [11] [12] [13] [14] [15]
+//	ORDER: [3] [2] [1] [0] - [5] [4] - [7] [6] - [8] [9] - [10] [11] [12] [13] [14] [15]
+//
+// This can be found in the System/Guid.cs source code (permalink: https://github.com/dotnet/runtime/blob/aa0a7e97764147b0a82412e353003b61b86897d1/src/libraries/System.Private.CoreLib/src/System/Guid.cs#L528-L543)
+// and in some blogs and articles.
 func Parse(encoded []byte) (string, error) {
 	if len(encoded) != 16 {
 		return "", errors.New("invalid length")

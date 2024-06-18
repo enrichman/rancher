@@ -35,6 +35,13 @@ func TestParse(t *testing.T) {
 			encoded:     []byte("\xaf\xf6\x0e\x96\xe3"),
 			expectedErr: "invalid length",
 		},
+		{
+			// This test data was taken from the following MS example:
+			// https://learn.microsoft.com/en-us/dotnet/api/system.guid.tobytearray?view=net-8.0
+			name:         "Microsoft GUID",
+			encoded:      []byte("\xC9\x8B\x91\x35\x6D\x19\xEA\x40\x97\x79\x88\x9D\x79\xB7\x53\xF0"),
+			expectedUUID: "35918bc9-196d-40ea-9779-889d79b753f0",
+		},
 	}
 
 	for _, tc := range tt {
