@@ -20,13 +20,19 @@ func TestDecodings(t *testing.T) {
 			name:         "valid objectGUID 1",
 			encoded:      []byte("\xaf\xf6\x0e=[\x96\xe3D\x8f\xea\xb2:}:\xa6\xcb"),
 			expectedUUID: "3d0ef6af-965b-44e3-8fea-b23a7d3aa6cb",
-			expectedHex:  "AF F6 E 3D 5B 96 E3 44 8F EA B2 3A 7D 3A A6 CB",
+			expectedHex:  "AF F6 0E 3D 5B 96 E3 44 8F EA B2 3A 7D 3A A6 CB",
 		},
 		{
 			name:         "valid objectGUID 2",
 			encoded:      []byte("\xbf?Yu\xd1WUL\x87-\x93r\xef\x0f\xdd\x15"),
 			expectedUUID: "75593fbf-57d1-4c55-872d-9372ef0fdd15",
-			expectedHex:  "BF 3F 59 75 D1 57 55 4C 87 2D 93 72 EF F DD 15",
+			expectedHex:  "BF 3F 59 75 D1 57 55 4C 87 2D 93 72 EF 0F DD 15",
+		},
+		{
+			name:         "valid objectGUID 3",
+			encoded:      []byte("\x36\xf4\x21\x9b\xf9\x8a\x54\x48\x95\x3d\xc6\x36\x99\x90\xe0\xa0"),
+			expectedUUID: "9b21f436-8af9-4854-953d-c6369990e0a0",
+			expectedHex:  "36 F4 21 9B F9 8A 54 48 95 3D C6 36 99 90 E0 A0",
 		},
 		{
 			name:         "valid objectGUID with N char",
@@ -81,6 +87,11 @@ func TestParse(t *testing.T) {
 			name:         "valid uuid 2",
 			uuid:         "75593fbf-57d1-4c55-872d-9372ef0fdd15",
 			expectedGUID: []byte("\xbf?Yu\xd1WUL\x87-\x93r\xef\x0f\xdd\x15"),
+		},
+		{
+			name:         "valid uuid 3",
+			uuid:         "9b21f436-8af9-4854-953d-c6369990e0a0",
+			expectedGUID: []byte("\x36\xf4\x21\x9b\xf9\x8a\x54\x48\x95\x3d\xc6\x36\x99\x90\xe0\xa0"),
 		},
 		{
 			name:         "valid uuid with N char",

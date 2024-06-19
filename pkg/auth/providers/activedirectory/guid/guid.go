@@ -54,6 +54,11 @@ func (g GUID) UUID() string {
 // Hex returns the Hex string representation: "33 22 11 00 55 44 77 66 88 99 AA BB CC DD EE FF"
 func (g GUID) Hex() string {
 	hexesArr := hexes(g.Bytes())
+
+	for i := range hexesArr {
+		hexesArr[i] = strings.ToUpper(hexesArr[i])
+	}
+
 	return strings.Join(hexesArr, " ")
 }
 
@@ -108,12 +113,13 @@ func swap(u []byte) {
 	u[6], u[7] = u[7], u[6]
 }
 
-func hexes(g []byte) []string {
+// hexes returns a string array of the hex decoded values
+func hexes(bytes []byte) []string {
 	var hexes []string
 
-	for _, b := range g {
-		hex := fmt.Sprintf("%x", b)
-		hexes = append(hexes, strings.ToUpper(hex))
+	for _, b := range bytes {
+		hex := fmt.Sprintf("%02x", b)
+		hexes = append(hexes, hex)
 	}
 
 	return hexes
