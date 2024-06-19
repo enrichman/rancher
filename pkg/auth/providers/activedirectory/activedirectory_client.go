@@ -80,7 +80,18 @@ func (p *adProvider) loginUser(adCredential *v32.BasicLogin, config *v32.ActiveD
 		return v3.Principal{}, nil, err
 	}
 
-	allowed, err := p.userMGR.CheckAccess(config.AccessMode, config.AllowedPrincipalIDs, userPrincipal.Name, groupPrincipals)
+	var allowedAliases []string
+	for _, allowedPrincipal := range config.AllowedPrincipalIDs {
+		aliases, err := ldap.GatherAliases(lConn, ObjectClass, config.UserObjectClass, allowedPrincipal, config.GetUserSearchAttributes())
+		if err != nil {
+			logrus.Warnf("failed to GatherAliases for allowedPrincipal '%s': %s\n", allowedPrincipal, err)
+			continue
+		}
+		allowedAliases = append(allowedAliases, aliases...)
+	}
+	allowedPrincipals := append(allowedAliases, config.AllowedPrincipalIDs...)
+
+	allowed, err := p.userMGR.CheckAccess(config.AccessMode, allowedPrincipals, userPrincipal.Name, groupPrincipals)
 	if err != nil {
 		return v3.Principal{}, nil, err
 	}
@@ -187,22 +198,27 @@ func (p *adProvider) getPrincipalsFromSearchResult(result *ldapv3.SearchResult, 
 		return userPrincipal, groupPrincipals, err
 	}
 
-	// check if legacy
-	legacyName := fmt.Sprintf("activedirectory_user://%s", result.Entries[0].DN)
-	uu, _ := p.userMGR.GetUserByPrincipalID(legacyName)
-	if uu != nil {
+	// Check if legacy user
+	//
+	// Look into the cache if the user with the DN is present.
+	legacyName := fmt.Sprintf("%s://%s", UserScope, result.Entries[0].DN)
+	cachedUser, err := p.userMGR.GetUserByPrincipalID(legacyName)
+	if err != nil {
+		return userPrincipal, groupPrincipals, err
+	}
+
+	// If cachedUser was found it's an old one: we need to fallback and use the DN.
+	// Otherwise the user is new and we can use the objectGUID
+	if cachedUser != nil {
 		user.ObjectMeta.Name = legacyName
 	} else {
 		encodedGUID := entry.GetRawAttributeValue("objectGUID")
-		parsedGUID, err := guid.Parse(encodedGUID)
+		parsedUUID, err := guid.Parse(encodedGUID)
 		if err != nil {
 			return userPrincipal, groupPrincipals, err
 		}
 
-		objectGUIDName := fmt.Sprintf("activedirectory_user://objectGUID=%s", parsedGUID)
-		uu, _ := p.userMGR.GetUserByPrincipalID(objectGUIDName)
-		fmt.Println(uu) // we don't care!
-		user.ObjectMeta.Name = objectGUIDName
+		user.ObjectMeta.Name = fmt.Sprintf("%s://objectGUID=%s", UserScope, parsedUUID)
 	}
 
 	userPrincipal = *user
