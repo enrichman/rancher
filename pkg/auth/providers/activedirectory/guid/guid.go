@@ -1,3 +1,19 @@
+// Package guid is used to handle the non-standard UUID from the Microsoft Active Directory.
+// The objectGUID is following the DSP0134 specification, described in the
+// DMTF System Management BIOS (SMBIOS) Reference Specification document:
+//
+//   - https://www.dmtf.org/sites/default/files/standards/documents/DSP0134_3.4.0.pdf
+//
+// According to this spec the bytes for the time_low, time_mid and time_hi_and_version
+// values follow the little endian format.
+//
+// The standard RFC4122 encoding for the UUID "00112233-4455-6677-8899-AABBCCDDEEFF" is:
+//
+//	00 11 22 33 44 55 66 77 88 99 AA BB CC DD EE FF
+//
+// The encoding specified in DSP0134 is:
+//
+//	33 22 11 00 55 44 77 66 88 99 AA BB CC DD EE FF
 package guid
 
 import (
@@ -8,49 +24,49 @@ import (
 	"strings"
 )
 
-var (
-	// order defines the bytes arrangement of the original binary objectGUID
-	order     = []int{3, 2, 1, 0, 5, 4, 7, 6, 8, 9, 10, 11, 12, 13, 14, 15}
-	uuidRegex = regexp.MustCompile("(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
-)
+var uuidRegex = regexp.MustCompile("(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
-// Parse returns a UUID string in the "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" format
-// parsing the encoded binary of an Active Directory objectGUID attribute.
-// The encoded byte array should have a length of 16 bytes.
-//
-// The Microsoft dotnet GUID is a rearrangement of the original binary byte array in this particular order:
-//
-//	ORDER: [3] [2] [1] [0] - [5] [4] - [7] [6] - [8] [9] - [10] [11] [12] [13] [14] [15]
-//
-// This can be found in the System/Guid.cs source code (permalink: https://github.com/dotnet/runtime/blob/aa0a7e97764147b0a82412e353003b61b86897d1/src/libraries/System.Private.CoreLib/src/System/Guid.cs#L528-L543)
-// and in some blogs and articles.
-func Parse(encoded []byte) (string, error) {
-	if len(encoded) != 16 {
-		return "", errors.New("invalid length")
-	}
+type GUID []byte
 
-	ordered := make([]byte, 16)
+func (g GUID) Bytes() []byte {
+	return g
+}
 
-	for i, pos := range order {
-		ordered[pos] = encoded[i]
-	}
+func (g GUID) UUID() string {
+	u := make([]byte, len(g))
+	copy(u, g)
+	swap(u)
 
 	return fmt.Sprintf(
 		"%x-%x-%x-%x-%x",
-		ordered[:4],
-		ordered[4:6],
-		ordered[6:8],
-		ordered[8:10],
-		ordered[10:],
-	), nil
+		u[:4], u[4:6], u[6:8], u[8:10], u[10:],
+	)
 }
 
-// Encode will return the original Active Directory objectGUID binary format
-// encoding the UUID string representation.
-// It returns an error if the proved UUID is not valid.
-func Encode(uuid string) ([]byte, error) {
+func (g GUID) Hex() string {
+	var hexes []string
+
+	for _, b := range g.Bytes() {
+		hex := fmt.Sprintf("%x", b)
+		hexes = append(hexes, strings.ToUpper(hex))
+	}
+
+	return strings.Join(hexes, " ")
+}
+
+// Parse returns a GUID object
+func New(encoded []byte) (GUID, error) {
+	if len(encoded) != 16 {
+		return nil, errors.New("invalid length")
+	}
+
+	return GUID(encoded), nil
+}
+
+// ParseFromUUID returns a GUID object from UUID string
+func Parse(uuid string) (GUID, error) {
 	if !uuidRegex.MatchString(uuid) {
-		return nil, errors.New("cannot encode UUID to objectGUID: invalid format")
+		return nil, errors.New("cannot parse UUID to objectGUID: invalid format")
 	}
 
 	uuid = strings.ReplaceAll(uuid, "-", "")
@@ -59,24 +75,15 @@ func Encode(uuid string) ([]byte, error) {
 		return nil, err
 	}
 
-	// this should never happen
-	if len(uuidBytes) != 16 {
-		return nil, errors.New("invalid UUID length")
-	}
-
-	ordered := make([]byte, 16)
-	for i, b := range uuidBytes {
-		ordered[order[i]] = b
-	}
-
-	return ordered, nil
+	swap(uuidBytes)
+	return GUID(uuidBytes), nil
 }
 
 // Escape returns an escaped string format of the objectGUID that can be safely used
 // through the LDAP search. Every byte has to be encoded in an hex string,
 // and prefixed with the '\' character. If a byte has a hex encoded string of
 // length 1 then it will be prefixed with a '0'.
-func Escape(guid []byte) string {
+func Escape(guid GUID) string {
 	builder := strings.Builder{}
 
 	for _, b := range guid {
@@ -90,4 +97,14 @@ func Escape(guid []byte) string {
 	}
 
 	return builder.String()
+}
+
+func swap(u []byte) {
+	if len(u) != 16 {
+		return
+	}
+
+	u[0], u[1], u[2], u[3] = u[3], u[2], u[1], u[0]
+	u[4], u[5] = u[5], u[4]
+	u[6], u[7] = u[7], u[6]
 }

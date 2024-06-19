@@ -213,7 +213,7 @@ func (p *adProvider) getPrincipalsFromSearchResult(result *ldapv3.SearchResult, 
 		user.ObjectMeta.Name = legacyName
 	} else {
 		encodedGUID := entry.GetRawAttributeValue("objectGUID")
-		parsedUUID, err := guid.Parse(encodedGUID)
+		parsedUUID, err := guid.New(encodedGUID)
 		if err != nil {
 			return userPrincipal, groupPrincipals, err
 		}
@@ -435,7 +435,7 @@ func (p *adProvider) getPrincipal(distinguishedName string, scope string, config
 				filter,
 				config.GetUserSearchAttributes(ObjectClass), nil)
 		} else {
-			encoded, err := guid.Encode(uuid)
+			encoded, err := guid.Parse(uuid)
 			if err != nil {
 				return nil, fmt.Errorf("encoding guid from UUID [%s]: %w", uuid, err)
 			}
@@ -569,9 +569,9 @@ func (p *adProvider) searchLdap(query string, scope string, config *v32.ActiveDi
 		u, err := p.userMGR.GetUserByPrincipalID(principalID)
 		// user doesn't exist: use the UUID as externalID
 		if err == nil && u == nil {
-			parsedGUID, err := guid.Parse(entry.GetRawAttributeValue("objectGUID"))
+			parsedGUID, err := guid.New(entry.GetRawAttributeValue("objectGUID"))
 			if err == nil {
-				externalID = "objectGUID=" + parsedGUID
+				externalID = "objectGUID=" + parsedGUID.UUID()
 			}
 		}
 

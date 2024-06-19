@@ -276,9 +276,9 @@ func GatherAliases(lConn ldapv3.Client, objectClass, userObjectClass, main strin
 
 	objectGUID := result.Entries[0].GetRawAttributeValue("objectGUID")
 	if len(objectGUID) > 0 {
-		parsedUUID, err := guid.Parse(objectGUID)
+		parsedUUID, err := guid.New(objectGUID)
 		if err != nil {
-			return nil, fmt.Errorf("error parsing guid %w", err)
+			return nil, fmt.Errorf("error creating guid %w", err)
 		}
 		aliases = append(aliases, fmt.Sprintf("%s://objectGUID=%s", parts[0], parsedUUID))
 	}
