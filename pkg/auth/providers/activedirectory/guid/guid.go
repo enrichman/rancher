@@ -26,12 +26,20 @@ import (
 
 var uuidRegex = regexp.MustCompile("(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
+// GUID represent the UUID in the DSP0134 spec
 type GUID []byte
 
+// Bytes returns the underlying bytes value
 func (g GUID) Bytes() []byte {
 	return g
 }
 
+// String returns UUID string representation
+func (g GUID) String() string {
+	return g.UUID()
+}
+
+// UUID returns the UUID string representation: "00112233-4455-6677-8899-AABBCCDDEEFF"
 func (g GUID) UUID() string {
 	u := make([]byte, len(g))
 	copy(u, g)
@@ -43,18 +51,13 @@ func (g GUID) UUID() string {
 	)
 }
 
+// Hex returns the Hex string representation: "33 22 11 00 55 44 77 66 88 99 AA BB CC DD EE FF"
 func (g GUID) Hex() string {
-	var hexes []string
-
-	for _, b := range g.Bytes() {
-		hex := fmt.Sprintf("%x", b)
-		hexes = append(hexes, strings.ToUpper(hex))
-	}
-
-	return strings.Join(hexes, " ")
+	hexesArr := hexes(g.Bytes())
+	return strings.Join(hexesArr, " ")
 }
 
-// Parse returns a GUID object
+// New returns a GUID object
 func New(encoded []byte) (GUID, error) {
 	if len(encoded) != 16 {
 		return nil, errors.New("invalid length")
@@ -63,7 +66,7 @@ func New(encoded []byte) (GUID, error) {
 	return GUID(encoded), nil
 }
 
-// ParseFromUUID returns a GUID object from UUID string
+// Parse returns a GUID object from a RFC4122 UUID string
 func Parse(uuid string) (GUID, error) {
 	if !uuidRegex.MatchString(uuid) {
 		return nil, errors.New("cannot parse UUID to objectGUID: invalid format")
@@ -86,13 +89,9 @@ func Parse(uuid string) (GUID, error) {
 func Escape(guid GUID) string {
 	builder := strings.Builder{}
 
-	for _, b := range guid {
+	hexArray := hexes(guid.Bytes())
+	for _, hex := range hexArray {
 		builder.WriteString(`\`)
-
-		hex := hex.EncodeToString([]byte{b})
-		if len(hex) == 1 {
-			builder.WriteString("0")
-		}
 		builder.WriteString(hex)
 	}
 
@@ -107,4 +106,15 @@ func swap(u []byte) {
 	u[0], u[1], u[2], u[3] = u[3], u[2], u[1], u[0]
 	u[4], u[5] = u[5], u[4]
 	u[6], u[7] = u[7], u[6]
+}
+
+func hexes(g []byte) []string {
+	var hexes []string
+
+	for _, b := range g {
+		hex := fmt.Sprintf("%x", b)
+		hexes = append(hexes, strings.ToUpper(hex))
+	}
+
+	return hexes
 }
