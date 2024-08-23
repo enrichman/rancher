@@ -132,13 +132,30 @@ func (p *adProvider) RefetchGroupPrincipals(principalID string, secret string) (
 		return nil, err
 	}
 
-	dn := externalID
+	searchBase := externalID
+	filter := fmt.Sprintf("(%v=%v)", ObjectClass, config.UserObjectClass)
 
-	logrus.Debugf("LDAP Refetch principals base DN : {%s}", dn)
+	if strings.HasPrefix(externalID, "objectGUID=") {
+		uuid := strings.TrimPrefix(externalID, "objectGUID=")
+		logrus.Debugf("LDAP Refetch principals base objectGUID : {%s}", uuid)
 
-	search := ldap.NewBaseObjectSearchRequest(
-		dn,
-		fmt.Sprintf("(%v=%v)", ObjectClass, config.UserObjectClass),
+		encoded, err := guid.Parse(uuid)
+		if err != nil {
+			return nil, fmt.Errorf("encoding guid from UUID [%s]: %w", uuid, err)
+		}
+
+		filter += fmt.Sprintf("(objectGUID=%s)", guid.Escape(encoded))
+		filter = fmt.Sprintf("(&%s)", filter)
+
+		// with the UUID the search base needs to be the global user base
+		searchBase = config.UserSearchBase
+	} else {
+		logrus.Debugf("LDAP Refetch principals base DN : {%s}", externalID)
+	}
+
+	search := ldap.NewWholeSubtreeSearchRequest(
+		searchBase,
+		filter,
 		config.GetUserSearchAttributes(defaultUserAttributes...),
 	)
 
