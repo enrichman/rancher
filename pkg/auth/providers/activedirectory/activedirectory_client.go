@@ -468,8 +468,8 @@ func (p *adProvider) getPrincipal(distinguishedName string, scope string, config
 		attrs = config.GetGroupSearchAttributes(MemberOfAttribute, ObjectClass)
 	}
 
-	search = ldap.NewBaseObjectSearchRequest(
-		distinguishedName,
+	search = ldap.NewWholeSubtreeSearchRequest(
+		searchBase,
 		filter,
 		attrs,
 	)
