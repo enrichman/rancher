@@ -135,8 +135,8 @@ func (p *adProvider) RefetchGroupPrincipals(principalID string, secret string) (
 	searchBase := externalID
 	filter := fmt.Sprintf("(%v=%v)", ObjectClass, config.UserObjectClass)
 
-	if strings.HasPrefix(externalID, "objectGUID=") {
-		uuid := strings.TrimPrefix(externalID, "objectGUID=")
+	if strings.HasPrefix(externalID, ObjectGUIDAttribute+"=") {
+		uuid := strings.TrimPrefix(externalID, ObjectGUIDAttribute+"=")
 		logrus.Debugf("LDAP Refetch principals base objectGUID : {%s}", uuid)
 
 		encoded, err := guid.Parse(uuid)
@@ -144,7 +144,7 @@ func (p *adProvider) RefetchGroupPrincipals(principalID string, secret string) (
 			return nil, fmt.Errorf("encoding guid from UUID [%s]: %w", uuid, err)
 		}
 
-		filter += fmt.Sprintf("(objectGUID=%s)", guid.Escape(encoded))
+		filter += fmt.Sprintf("(%s=%s)", ObjectGUIDAttribute, guid.Escape(encoded))
 		filter = fmt.Sprintf("(&%s)", filter)
 
 		// with the UUID the search base needs to be the global user base
@@ -214,27 +214,25 @@ func (p *adProvider) getPrincipalsFromSearchResult(result *ldapv3.SearchResult, 
 		return userPrincipal, groupPrincipals, err
 	}
 
-	// Check if legacy user
-	//
+	// Check if the user is an already existing one.
 	// Look into the cache if the user with the DN is present.
 	legacyName := fmt.Sprintf("%s://%s", UserScope, result.Entries[0].DN)
+	user.ObjectMeta.Name = legacyName
+
 	cachedUser, err := p.userMGR.GetUserByPrincipalID(legacyName)
 	if err != nil {
 		return userPrincipal, groupPrincipals, err
 	}
 
-	// If cachedUser was found it's an old one: we need to fallback and use the DN.
-	// Otherwise, the user is new and we can use the objectGUID
-	if cachedUser != nil {
-		user.ObjectMeta.Name = legacyName
-	} else {
-		encodedGUID := entry.GetRawAttributeValue("objectGUID")
+	// If cachedUser is nil then it's a new one. Use the objectGUID as principalID
+	if cachedUser == nil {
+		encodedGUID := entry.GetRawAttributeValue(ObjectGUIDAttribute)
 		parsedUUID, err := guid.New(encodedGUID)
 		if err != nil {
 			return userPrincipal, groupPrincipals, err
 		}
 
-		user.ObjectMeta.Name = fmt.Sprintf("%s://objectGUID=%s", UserScope, parsedUUID)
+		user.ObjectMeta.Name = fmt.Sprintf("%s://%s=%s", ObjectGUIDAttribute, UserScope, parsedUUID)
 	}
 
 	userPrincipal = *user
@@ -394,8 +392,8 @@ func (p *adProvider) getPrincipal(distinguishedName string, scope string, config
 
 		// if dn is NOT using GUID check if we can find an already "migrated" existing user
 		var uuid string
-		if strings.HasPrefix(distinguishedName, "objectGUID=") {
-			uuid = strings.TrimPrefix(distinguishedName, "objectGUID=")
+		if strings.HasPrefix(distinguishedName, ObjectGUIDAttribute+"=") {
+			uuid = strings.TrimPrefix(distinguishedName, ObjectGUIDAttribute+"=")
 		} else {
 			u, err := p.userMGR.GetUserByPrincipalID(scope + "://" + distinguishedName)
 			if err != nil {
@@ -405,8 +403,8 @@ func (p *adProvider) getPrincipal(distinguishedName string, scope string, config
 			// user found, look for the objectGUID
 			if u != nil {
 				for _, principalID := range u.PrincipalIDs {
-					if strings.Contains(principalID, "objectGUID") {
-						uuid = strings.TrimPrefix(principalID, scope+"://objectGUID=")
+					if strings.Contains(principalID, ObjectGUIDAttribute) {
+						uuid = strings.TrimPrefix(principalID, fmt.Sprintf("%s://%s=", scope, ObjectGUIDAttribute))
 						break
 					}
 				}
@@ -420,7 +418,7 @@ func (p *adProvider) getPrincipal(distinguishedName string, scope string, config
 				return nil, fmt.Errorf("encoding guid from UUID [%s]: %w", uuid, err)
 			}
 
-			filter += fmt.Sprintf("(objectGUID=%s)", guid.Escape(encoded))
+			filter += fmt.Sprintf("(%s=%s)", ObjectGUIDAttribute, guid.Escape(encoded))
 			filter = fmt.Sprintf("(&%s)", filter)
 
 			// with the UUID the search base needs to be the global user base
@@ -590,7 +588,7 @@ func (p *adProvider) searchLdap(query string, scope string, config *v32.ActiveDi
 		u, err := p.userMGR.GetUserByPrincipalID(principalID)
 		// user doesn't exist: use the UUID as externalID
 		if err == nil && u == nil {
-			parsedGUID, err := guid.New(entry.GetRawAttributeValue("objectGUID"))
+			parsedGUID, err := guid.New(entry.GetRawAttributeValue(ObjectGUIDAttribute))
 			if err == nil {
 				externalID = "objectGUID=" + parsedGUID.UUID()
 			}
