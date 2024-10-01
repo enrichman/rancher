@@ -232,7 +232,7 @@ func (p *adProvider) getPrincipalsFromSearchResult(result *ldapv3.SearchResult, 
 			return userPrincipal, groupPrincipals, err
 		}
 
-		user.ObjectMeta.Name = fmt.Sprintf("%s://%s=%s", ObjectGUIDAttribute, UserScope, parsedUUID)
+		user.ObjectMeta.Name = fmt.Sprintf("%s://%s=%s", UserScope, ObjectGUIDAttribute, parsedUUID)
 	}
 
 	userPrincipal = *user
