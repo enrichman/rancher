@@ -15,6 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/rancher/rancher/pkg/auth/providerrefresh"
+	admigration "github.com/rancher/rancher/pkg/auth/providers/activedirectory/migration"
 	"github.com/rancher/rancher/pkg/auth/providers/common"
 	"github.com/rancher/rancher/pkg/auth/tokens"
 	"github.com/rancher/rancher/pkg/catalog/manager"
@@ -217,6 +218,7 @@ func (m *mcm) Start(ctx context.Context) error {
 		}
 
 		go adunmigration.UnmigrateAdGUIDUsersOnce(m.ScaledContext)
+		go admigration.Run(ctx, management)
 		tokens.StartPurgeDaemon(ctx, management)
 		providerrefresh.StartRefreshDaemon(ctx, m.ScaledContext, management)
 		managementdata.CleanupOrphanedSystemUsers(ctx, management)

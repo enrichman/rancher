@@ -152,6 +152,8 @@ func AttributesToPrincipal(attribs []*ldapv3.EntryAttribute, dnStr, scope, provi
 	externalID = dnStr
 	externalIDType = scope
 
+	labels := map[string]string{}
+
 	if IsType(attribs, userObjectClass) {
 		for _, attr := range attribs {
 			if attr.Name == userNameAttribute {
@@ -164,6 +166,16 @@ func AttributesToPrincipal(attribs []*ldapv3.EntryAttribute, dnStr, scope, provi
 			if attr.Name == userLoginAttribute {
 				if len(attr.Values) > 0 && attr.Values[0] != "" {
 					login = attr.Values[0]
+				}
+			}
+
+			if attr.Name == "objectGUID" {
+				if len(attr.ByteValues) > 0 {
+					parsedUUID, err := guid.New(attr.ByteValues[0])
+					if err != nil {
+						return nil, fmt.Errorf("error creating guid %w", err)
+					}
+					labels["objectGUID"] = parsedUUID.UUID()
 				}
 			}
 		}
@@ -195,7 +207,10 @@ func AttributesToPrincipal(attribs []*ldapv3.EntryAttribute, dnStr, scope, provi
 	}
 
 	principal := &v3.Principal{
-		ObjectMeta:    metav1.ObjectMeta{Name: externalIDType + "://" + externalID},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   externalIDType + "://" + externalID,
+			Labels: labels,
+		},
 		DisplayName:   accountName,
 		LoginName:     login,
 		PrincipalType: kind,
