@@ -152,7 +152,9 @@ func AttributesToPrincipal(attribs []*ldapv3.EntryAttribute, dnStr, scope, provi
 	externalID = dnStr
 	externalIDType = scope
 
-	labels := map[string]string{}
+	labels := map[string]string{
+		"dn": dnStr,
+	}
 
 	if IsType(attribs, userObjectClass) {
 		for _, attr := range attribs {
