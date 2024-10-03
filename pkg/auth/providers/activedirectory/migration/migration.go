@@ -2,22 +2,16 @@ package migration
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	v3 "github.com/rancher/rancher/pkg/apis/management.cattle.io/v3"
-	mv3 "github.com/rancher/rancher/pkg/generated/norman/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
-	apierror "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/rancher/rancher/pkg/auth/providers"
 	ad "github.com/rancher/rancher/pkg/auth/providers/activedirectory"
 	"github.com/rancher/rancher/pkg/types/config"
-	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
-
-const ConfigName = "admigration-config"
 
 type UserContext struct {
 	PrincipalID string
@@ -46,35 +40,50 @@ func Run(ctx context.Context, management *config.ManagementContext) {
 	// 	panic(err)
 	// }
 
-	// TODO check if a configuration exists
-	var cm *corev1.ConfigMap
-
-	cm, err = management.K8sClient.CoreV1().ConfigMaps("cattle-system").Get(ctx, ConfigName, v1.GetOptions{})
-	if err != nil {
-		if !apierror.IsNotFound(err) {
-			panic(err)
-		}
-		// if not found create and store the default map
-		cm, err = management.K8sClient.CoreV1().ConfigMaps("cattle-system").Create(ctx, &corev1.ConfigMap{
-			ObjectMeta: v1.ObjectMeta{Name: ConfigName},
-			Data: map[string]string{
-				"running": "true",
-			},
-		}, v1.CreateOptions{})
-		if err != nil {
-			panic(err)
-		}
-	}
-	fmt.Println(cm)
-
-	allUsers, err := management.Management.Users("").List(v1.ListOptions{})
+	// Get the configuration
+	configMapInterface := management.K8sClient.CoreV1().ConfigMaps("cattle-system")
+	config, err := GetOrCreateConfig(ctx, configMapInterface)
 	if err != nil {
 		panic(err)
 	}
 
-	adUsers := map[string]UserContext{}
+	// if config is disabled, stop
+	if !config.Enabled {
+		return
+	}
 
-	for _, user := range allUsers.Items {
+	// if migration is running, stop
+	if config.Status == StatusRunning {
+		return
+	}
+
+	usersInterface := management.Management.Users("")
+	adUsers, err := GetActiveDirectoryUsers(usersInterface)
+	if err != nil {
+		panic(err)
+	}
+
+	// if users > 0 we need to get only those
+	if len(config.Users) > 0 {
+		usersSet := sets.NewString(config.Users...)
+
+		filtered := []v3.User{}
+		for _, adUser := range adUsers {
+			if usersSet.Has(adUser.Name) {
+				filtered = append(filtered, adUser)
+			}
+		}
+		adUsers = filtered
+	}
+
+	if config.Limit > 0 {
+		limit := min(config.Limit, len(adUsers))
+		adUsers = adUsers[:limit]
+	}
+
+	userContextMap := map[string]UserContext{}
+
+	for _, user := range adUsers {
 		for _, pID := range user.PrincipalIDs {
 			if strings.HasPrefix(pID, ad.UserScope+"://") {
 				principal, err := provider.GetPrincipal(pID, v3.Token{})
@@ -82,7 +91,7 @@ func Run(ctx context.Context, management *config.ManagementContext) {
 					panic(err)
 				}
 
-				adUsers[pID] = UserContext{
+				userContextMap[pID] = UserContext{
 					User:        &user,
 					PrincipalID: pID,
 					DN:          principal.GetLabels()["dn"],
@@ -98,12 +107,12 @@ func Run(ctx context.Context, management *config.ManagementContext) {
 	}
 
 	for principalID, prtbs := range prtbsMap {
-		userCtx, found := adUsers[principalID]
+		userCtx, found := userContextMap[principalID]
 		if !found {
 			// what??
 		}
 		userCtx.PRTBs = append(userCtx.PRTBs, prtbs...)
-		adUsers[principalID] = userCtx
+		userContextMap[principalID] = userCtx
 	}
 
 	// split
@@ -111,7 +120,7 @@ func Run(ctx context.Context, management *config.ManagementContext) {
 	adUsersGUID := map[string]UserContext{}
 	adUsersDN := map[string]UserContext{}
 
-	for pID, userCtx := range adUsers {
+	for pID, userCtx := range userContextMap {
 		if strings.HasPrefix(pID, ad.UserScope+"://objectGUID") {
 			adUsersGUID[pID] = userCtx
 		} else {
@@ -129,27 +138,4 @@ func Run(ctx context.Context, management *config.ManagementContext) {
 
 	// do this in migrate/rollback
 	// check if a job is already running (only the check action can run)
-}
-
-// principal to PRTBs map
-func GetPRTBs(prtbInterface mv3.ProjectRoleTemplateBindingInterface) (map[string][]*v3.ProjectRoleTemplateBinding, error) {
-	prtbsMap := make(map[string][]*v3.ProjectRoleTemplateBinding)
-
-	prtbs, err := prtbInterface.List(v1.ListOptions{})
-	if err != nil {
-		panic(err)
-	}
-
-	for _, prtb := range prtbs.Items {
-		if strings.HasPrefix(prtb.UserPrincipalName, ad.UserScope+"://") {
-			bindings, found := prtbsMap[prtb.UserPrincipalName]
-			if !found {
-				bindings = []*v3.ProjectRoleTemplateBinding{}
-			}
-
-			prtbsMap[prtb.UserPrincipalName] = append(bindings, &prtb)
-		}
-	}
-
-	return prtbsMap, nil
 }
