@@ -496,6 +496,18 @@ func (p *adProvider) getPrincipal(distinguishedName string, scope string, config
 	if err != nil {
 		return nil, err
 	}
+
+	// add extraInfo
+	if principal.ExtraInfo == nil {
+		principal.ExtraInfo = make(map[string]string)
+	}
+	principal.ExtraInfo["dn"] = entry.DN
+	parsedGUID, err := guid.New(entry.GetRawAttributeValue(ObjectGUIDAttribute))
+	if err != nil {
+		return nil, fmt.Errorf("error creating guid %w", err)
+	}
+	principal.ExtraInfo[ObjectGUIDAttribute] = parsedGUID.UUID()
+
 	return principal, nil
 }
 
