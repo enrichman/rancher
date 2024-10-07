@@ -125,6 +125,23 @@ func Run(ctx context.Context, management *config.ManagementContext) {
 		userContextMap[principalID] = userCtx
 	}
 
+	crtbsMap, err := GetCRTBs(management.Management.ClusterRoleTemplateBindings(""))
+	if err != nil {
+		panic(err)
+	}
+
+	for principalID, crtbs := range crtbsMap {
+		userCtx, found := userContextMap[principalID]
+		// if principalID does not have a user then it was filtered out by the 'users' configuration,
+		// limit, or it's an "orphaned" binding. Log and continue.
+		if !found {
+			logrus.Infof("[ActiveDirectory MIGRATION] Skipping migration of CRTBs for principal %s", principalID)
+			continue
+		}
+		userCtx.CRTBs = append(userCtx.CRTBs, crtbs...)
+		userContextMap[principalID] = userCtx
+	}
+
 	// split
 
 	adUsersGUID := map[string]UserContext{}
