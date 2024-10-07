@@ -31,3 +31,22 @@ func GetPRTBs(prtbInterface mv3.ProjectRoleTemplateBindingInterface) (map[string
 
 	return prtbsMap, nil
 }
+
+func UpdatePRTBPrincipal(prtbInterface mv3.ProjectRoleTemplateBindingInterface, prtb *v3.ProjectRoleTemplateBinding, principalID string) (*v3.ProjectRoleTemplateBinding, error) {
+	// generate a new PRTB
+	oldPRTBName := prtb.Name
+	prtb.UserPrincipalName = principalID
+	prtb.Name = ""
+	prtb.ResourceVersion = ""
+
+	newPRTB, err := prtbInterface.Create(prtb)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := prtbInterface.Delete(oldPRTBName, &v1.DeleteOptions{}); err != nil {
+		return nil, err
+	}
+
+	return newPRTB, nil
+}
