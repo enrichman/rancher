@@ -2,6 +2,7 @@ package migration
 
 import (
 	"context"
+	"encoding/base32"
 	"fmt"
 	"strings"
 
@@ -134,6 +135,8 @@ func Run(ctx context.Context, management *config.ManagementContext) {
 		}
 	}
 
+	logrus.Infof("[ActiveDirectory MIGRATION] Running '%s' action", config.Action)
+
 	// if we are running a check we can then simply return
 	if config.Action == ActionCheck {
 		Check(maps.Values(adUsersDN), maps.Values(adUsersGUID))
@@ -192,27 +195,17 @@ func Migrate(management *config.ManagementContext, usersCtx []UserContext) error
 	for _, userCtx := range usersCtx {
 		principalID := fmt.Sprintf("%s://%s=%s", ad.UserScope, ad.ObjectGUIDAttribute, userCtx.ObjectGUID)
 
-		user := userCtx.User
-		for i, pID := range user.PrincipalIDs {
-			if strings.HasPrefix(pID, ad.UserScope+"://") {
-				user.PrincipalIDs[i] = principalID
-			}
+		// store original principalID
+		encodedPrincipalID := base32.HexEncoding.
+			WithPadding(base32.NoPadding).
+			EncodeToString([]byte(userCtx.PrincipalID))
+
+		if userCtx.User.Annotations == nil {
+			userCtx.User.Annotations = make(map[string]string)
 		}
+		userCtx.User.Annotations["cattle.io/orig"] = encodedPrincipalID
 
-		for _, prtb := range userCtx.PRTBs {
-			prtbInterface := management.Management.ProjectRoleTemplateBindings(prtb.Namespace)
-
-			newPRTB, err := UpdatePRTBPrincipal(prtbInterface, prtb, principalID)
-			if err != nil {
-				return err
-			}
-
-			logrus.Infof("[ActiveDirectory MIGRATION] %s: deleted old PRTB %s in %s namespace", userCtx.User.Name, prtb.Name, prtb.Namespace)
-			logrus.Infof("[ActiveDirectory MIGRATION] %s: created new PRTB %s in %s namespace", userCtx.User.Name, newPRTB.Name, prtb.Namespace)
-		}
-
-		// update user
-		_, err := management.Management.Users("").Update(user)
+		err := updatePrincipal(management, userCtx, principalID)
 		if err != nil {
 			return err
 		}
@@ -224,30 +217,41 @@ func Rollback(management *config.ManagementContext, usersCtx []UserContext) erro
 	for _, userCtx := range usersCtx {
 		principalID := fmt.Sprintf("%s://%s", ad.UserScope, userCtx.DN)
 
-		user := userCtx.User
-		for i, pID := range user.PrincipalIDs {
-			if strings.HasPrefix(pID, ad.UserScope+"://") {
-				user.PrincipalIDs[i] = principalID
-			}
-		}
-
-		for _, prtb := range userCtx.PRTBs {
-			prtbInterface := management.Management.ProjectRoleTemplateBindings(prtb.Namespace)
-
-			newPRTB, err := UpdatePRTBPrincipal(prtbInterface, prtb, principalID)
-			if err != nil {
-				return err
-			}
-
-			logrus.Infof("[ActiveDirectory MIGRATION] %s: deleted old PRTB %s in %s namespace", userCtx.User.Name, prtb.Name, prtb.Namespace)
-			logrus.Infof("[ActiveDirectory MIGRATION] %s: created new PRTB %s in %s namespace", userCtx.User.Name, newPRTB.Name, prtb.Namespace)
-		}
-
-		// update user
-		_, err := management.Management.Users("").Update(user)
+		err := updatePrincipal(management, userCtx, principalID)
 		if err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+func updatePrincipal(management *config.ManagementContext, userCtx UserContext, principalID string) error {
+	user := userCtx.User
+
+	for _, prtb := range userCtx.PRTBs {
+		prtbInterface := management.Management.ProjectRoleTemplateBindings(prtb.Namespace)
+
+		oldPRTBName := prtb.Name
+		newPRTB, err := UpdatePRTBPrincipal(prtbInterface, prtb, principalID)
+		if err != nil {
+			return err
+		}
+
+		logrus.Infof("[ActiveDirectory MIGRATION] %s: deleted old PRTB %s in %s namespace", user.Name, oldPRTBName, prtb.Namespace)
+		logrus.Infof("[ActiveDirectory MIGRATION] %s: created new PRTB %s in %s namespace", user.Name, newPRTB.Name, prtb.Namespace)
+	}
+
+	// update user
+	for i, pID := range user.PrincipalIDs {
+		if strings.HasPrefix(pID, ad.UserScope+"://") {
+			user.PrincipalIDs[i] = principalID
+		}
+	}
+
+	_, err := management.Management.Users("").Update(user)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
