@@ -157,46 +157,97 @@ func Run(ctx context.Context, management *config.ManagementContext) {
 }
 
 func Check(usersDNCtx []UserContext, usersGUIDCtx []UserContext) {
-
 	logrus.Infof("[ActiveDirectory MIGRATION] Found %d users to migrate", len(usersDNCtx))
-	logrus.Infof("[ActiveDirectory MIGRATION] Found %d users already migrated", len(usersGUIDCtx))
 
 	for _, userCtx := range usersDNCtx {
-		logrus.Infof("[ActiveDirectory MIGRATION] Migrating user %s: %s -> %s", userCtx.User.Name, userCtx.DN, userCtx.ObjectGUID)
-		logrus.Infof("[ActiveDirectory MIGRATION] [user %s] Found %d PRTBs", userCtx.User.Name, len(userCtx.PRTBs))
+		logrus.Infof(
+			"[ActiveDirectory MIGRATION] %s: DN: %s -> objectGUID: %s",
+			userCtx.User.Name, userCtx.DN, userCtx.ObjectGUID,
+		)
+
+		// PRTB
+		logrus.Infof("[ActiveDirectory MIGRATION] %s: Found %d PRTBs", userCtx.User.Name, len(userCtx.PRTBs))
+		for _, prtb := range userCtx.PRTBs {
+			logrus.Infof("[ActiveDirectory MIGRATION] %s: PRTB %s", userCtx.User.Name, prtb.Name)
+		}
+	}
+
+	logrus.Infof("[ActiveDirectory MIGRATION] Found %d users already migrated", len(usersGUIDCtx))
+
+	for _, userCtx := range usersGUIDCtx {
+		logrus.Infof(
+			"[ActiveDirectory MIGRATION] %s: objectGUID: %s -> DN: %s",
+			userCtx.User.Name, userCtx.ObjectGUID, userCtx.DN,
+		)
+
+		// PRTB
+		logrus.Infof("[ActiveDirectory MIGRATION] %s: Found %d PRTBs", userCtx.User.Name, len(userCtx.PRTBs))
+		for _, prtb := range userCtx.PRTBs {
+			logrus.Infof("[ActiveDirectory MIGRATION] %s: PRTB %s", userCtx.User.Name, prtb.Name)
+		}
 	}
 }
 
 func Migrate(management *config.ManagementContext, usersCtx []UserContext) error {
 	for _, userCtx := range usersCtx {
+		principalID := fmt.Sprintf("%s://%s=%s", ad.UserScope, ad.ObjectGUIDAttribute, userCtx.ObjectGUID)
+
 		user := userCtx.User
 		for i, pID := range user.PrincipalIDs {
 			if strings.HasPrefix(pID, ad.UserScope+"://") {
-				user.PrincipalIDs[i] = fmt.Sprintf("%s://%s=%s", ad.UserScope, ad.ObjectGUIDAttribute, userCtx.ObjectGUID)
+				user.PrincipalIDs[i] = principalID
 			}
 		}
-		updatedUser, err := management.Management.Users("").Update(user)
+
+		for _, prtb := range userCtx.PRTBs {
+			prtbInterface := management.Management.ProjectRoleTemplateBindings(prtb.Namespace)
+
+			newPRTB, err := UpdatePRTBPrincipal(prtbInterface, prtb, principalID)
+			if err != nil {
+				return err
+			}
+
+			logrus.Infof("[ActiveDirectory MIGRATION] %s: deleted old PRTB %s in %s namespace", userCtx.User.Name, prtb.Name, prtb.Namespace)
+			logrus.Infof("[ActiveDirectory MIGRATION] %s: created new PRTB %s in %s namespace", userCtx.User.Name, newPRTB.Name, prtb.Namespace)
+		}
+
+		// update user
+		_, err := management.Management.Users("").Update(user)
 		if err != nil {
 			return err
 		}
-		fmt.Println(updatedUser)
 	}
 	return nil
 }
 
 func Rollback(management *config.ManagementContext, usersCtx []UserContext) error {
 	for _, userCtx := range usersCtx {
+		principalID := fmt.Sprintf("%s://%s", ad.UserScope, userCtx.DN)
+
 		user := userCtx.User
 		for i, pID := range user.PrincipalIDs {
 			if strings.HasPrefix(pID, ad.UserScope+"://") {
-				user.PrincipalIDs[i] = fmt.Sprintf("%s://%s", ad.UserScope, userCtx.DN)
+				user.PrincipalIDs[i] = principalID
 			}
 		}
-		updatedUser, err := management.Management.Users("").Update(user)
+
+		for _, prtb := range userCtx.PRTBs {
+			prtbInterface := management.Management.ProjectRoleTemplateBindings(prtb.Namespace)
+
+			newPRTB, err := UpdatePRTBPrincipal(prtbInterface, prtb, principalID)
+			if err != nil {
+				return err
+			}
+
+			logrus.Infof("[ActiveDirectory MIGRATION] %s: deleted old PRTB %s in %s namespace", userCtx.User.Name, prtb.Name, prtb.Namespace)
+			logrus.Infof("[ActiveDirectory MIGRATION] %s: created new PRTB %s in %s namespace", userCtx.User.Name, newPRTB.Name, prtb.Namespace)
+		}
+
+		// update user
+		_, err := management.Management.Users("").Update(user)
 		if err != nil {
 			return err
 		}
-		fmt.Println(updatedUser)
 	}
 	return nil
 }
