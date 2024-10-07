@@ -115,8 +115,11 @@ func Run(ctx context.Context, management *config.ManagementContext) {
 
 	for principalID, prtbs := range prtbsMap {
 		userCtx, found := userContextMap[principalID]
+		// if principalID does not have a user then it was filtered out by the 'users' configuration,
+		// limit, or it's an "orphaned" binding. Log and continue.
 		if !found {
-			// what??
+			logrus.Infof("[ActiveDirectory MIGRATION] Skipping migration of PRTBs for principal %s", principalID)
+			continue
 		}
 		userCtx.PRTBs = append(userCtx.PRTBs, prtbs...)
 		userContextMap[principalID] = userCtx
@@ -239,6 +242,19 @@ func updatePrincipal(management *config.ManagementContext, userCtx UserContext, 
 
 		logrus.Infof("[ActiveDirectory MIGRATION] %s: deleted old PRTB %s in %s namespace", user.Name, oldPRTBName, prtb.Namespace)
 		logrus.Infof("[ActiveDirectory MIGRATION] %s: created new PRTB %s in %s namespace", user.Name, newPRTB.Name, prtb.Namespace)
+	}
+
+	for _, crtb := range userCtx.CRTBs {
+		crtbInterface := management.Management.ClusterRoleTemplateBindings(crtb.Namespace)
+
+		oldCRTBName := crtb.Name
+		newCRTB, err := UpdateCRTBPrincipal(crtbInterface, crtb, principalID)
+		if err != nil {
+			return err
+		}
+
+		logrus.Infof("[ActiveDirectory MIGRATION] %s: deleted old CRTB %s in %s namespace", user.Name, oldCRTBName, crtb.Namespace)
+		logrus.Infof("[ActiveDirectory MIGRATION] %s: created new CRTB %s in %s namespace", user.Name, newCRTB.Name, crtb.Namespace)
 	}
 
 	// update user

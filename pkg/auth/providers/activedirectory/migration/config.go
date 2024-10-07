@@ -3,6 +3,7 @@ package migration
 import (
 	"context"
 	"strconv"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apierror "k8s.io/apimachinery/pkg/api/errors"
@@ -109,14 +110,22 @@ func convertConfigMapToConfiguration(m map[string]string) *Configuration {
 		}
 	}
 
+	if usersStr, found := m["users"]; found {
+		if users := strings.Fields(usersStr); len(users) > 0 {
+			configuration.Users = users
+		}
+	}
+
 	return configuration
 }
 
 func convertConfigurationToConfigMap(config *Configuration) map[string]string {
 	data := map[string]string{
-		"limit":  strconv.Itoa(config.Limit),
-		"status": string(config.Status),
-		"action": string(config.Action),
+		"enabled": strconv.FormatBool(config.Enabled),
+		"status":  string(config.Status),
+		"action":  string(config.Action),
+		"limit":   strconv.Itoa(config.Limit),
+		"users":   strings.Join(config.Users, "\n"),
 	}
 
 	return data
