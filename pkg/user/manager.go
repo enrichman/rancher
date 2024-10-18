@@ -24,6 +24,7 @@ type Manager interface {
 	EnsureClusterToken(clusterName string, input TokenInput) (string, error)
 	DeleteToken(tokenName string) error
 	EnsureUser(principalName, displayName string) (*v3.User, error)
+	EnsureUserFromPrincipal(principal v3.Principal, displayName string) (*v3.User, error)
 	CheckAccess(accessMode string, allowedPrincipalIDs []string, userPrincipalID string, groups []v3.Principal) (bool, error)
 	SetPrincipalOnCurrentUserByUserID(userID string, principal v3.Principal) (*v3.User, error)
 	CreateNewUserClusterRoleBinding(userName string, userUID apitypes.UID) error

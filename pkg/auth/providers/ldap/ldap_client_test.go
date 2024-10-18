@@ -306,6 +306,9 @@ func (m mockUserManager) DeleteToken(tokenName string) error {
 func (m mockUserManager) EnsureUser(principalName, displayName string) (*v3.User, error) {
 	panic("unimplemented")
 }
+func (m mockUserManager) EnsureUserFromPrincipal(principal v3.Principal, displayName string) (*v3.User, error) {
+	panic("unimplemented")
+}
 func (m mockUserManager) CheckAccess(accessMode string, allowedPrincipalIDs []string, userPrincipalID string, groups []v3.Principal) (bool, error) {
 	return m.hasAccess, nil
 }

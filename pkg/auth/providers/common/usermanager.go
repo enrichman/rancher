@@ -168,6 +168,17 @@ func (m *userManager) SetPrincipalOnCurrentUserByUserID(userID string, principal
 	if !slice.ContainsString(user.PrincipalIDs, principal.Name) {
 		user.PrincipalIDs = append(user.PrincipalIDs, principal.Name)
 		logrus.Infof("Updating user %v. Adding principal", user.Name)
+
+		if principal.Annotations != nil {
+			if alias, found := principal.Annotations["cattle.io/principal-id-alias"]; found {
+				if user.Annotations == nil {
+					user.Annotations = make(map[string]string)
+				}
+				user.Annotations["cattle.io/principal-id-alias"] = alias
+				user.Labels[alias[:63]] = "hashed-principal-name"
+			}
+		}
+
 		return m.users.Update(user)
 	}
 	return user, nil
@@ -387,6 +398,15 @@ func (m *userManager) GetKubeconfigToken(clusterName, tokenName, description, ki
 }
 
 func (m *userManager) EnsureUser(principalName, displayName string) (*v3.User, error) {
+
+	return m.ensureUser(principalName, displayName, nil)
+}
+
+func (m *userManager) EnsureUserFromPrincipal(principal v3.Principal, displayName string) (*v3.User, error) {
+	return m.ensureUser(principal.Name, displayName, principal.Annotations)
+}
+
+func (m *userManager) ensureUser(principalName, displayName string, principalAnnotations map[string]string) (*v3.User, error) {
 	var user *v3.User
 	var err error
 	var labelSet labels.Set
@@ -441,11 +461,23 @@ func (m *userManager) EnsureUser(principalName, displayName string) (*v3.User, e
 			return nil, err
 		}
 
+		// merge the principal annotations with the User annotations (do not overwrite)\
+		if principalAnnotations == nil {
+			principalAnnotations = make(map[string]string)
+		}
+		for k, v := range principalAnnotations {
+			annotations[k] = v
+			// add label for search
+			if k == "cattle.io/principal-id-alias" {
+				labelSet[v[:63]] = "hashed-principal-name"
+			}
+		}
+
 		user = &v3.User{
 			ObjectMeta: v1.ObjectMeta{
 				Name:        "u-" + strings.ToLower(sha),
 				Labels:      labelSet,
-				Annotations: annotations,
+				Annotations: principalAnnotations,
 			},
 			DisplayName:  displayName,
 			PrincipalIDs: []string{principalName},
@@ -734,7 +766,16 @@ func (m *userManager) checkLabels(principalName string) (*v3.User, labels.Set, e
 
 	var match *v3.User
 	for _, u := range users.Items {
-		if slice.ContainsString(u.PrincipalIDs, principalName) {
+		principalIDs := u.PrincipalIDs
+		if ancodedAlias, found := u.Annotations["cattle.io/principal-id-alias"]; found {
+			alias, err := base32.HexEncoding.WithPadding(base32.NoPadding).DecodeString(ancodedAlias)
+			if err != nil {
+				return nil, nil, fmt.Errorf("decoding alias: %w", err)
+			}
+			principalIDs = append(principalIDs, string(alias))
+		}
+
+		if slice.ContainsString(principalIDs, principalName) {
 			if match != nil {
 				// error out on duplicates
 				return nil, nil, errors.Errorf("can't find unique user for principal %v", principalName)

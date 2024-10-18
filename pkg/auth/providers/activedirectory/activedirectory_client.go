@@ -2,6 +2,7 @@ package activedirectory
 
 import (
 	"crypto/x509"
+	"encoding/base32"
 	"fmt"
 	"reflect"
 	"strings"
@@ -225,6 +226,7 @@ func (p *adProvider) getPrincipalsFromSearchResult(result *ldapv3.SearchResult, 
 	}
 
 	// If cachedUser is nil then it's a new one. Use the objectGUID as principalID
+	// and store the DN in an annotation
 	if cachedUser == nil {
 		encodedGUID := entry.GetRawAttributeValue(ObjectGUIDAttribute)
 		parsedUUID, err := guid.New(encodedGUID)
@@ -233,6 +235,16 @@ func (p *adProvider) getPrincipalsFromSearchResult(result *ldapv3.SearchResult, 
 		}
 
 		user.ObjectMeta.Name = fmt.Sprintf("%s://%s=%s", UserScope, ObjectGUIDAttribute, parsedUUID)
+
+		// store the DN principalID
+		encodedPrincipalID := base32.HexEncoding.
+			WithPadding(base32.NoPadding).
+			EncodeToString([]byte(fmt.Sprintf("%s://%s", UserScope, entry.DN)))
+
+		if user.Annotations == nil {
+			user.Annotations = make(map[string]string)
+		}
+		user.Annotations["cattle.io/principal-id-alias"] = encodedPrincipalID
 	}
 
 	userPrincipal = *user

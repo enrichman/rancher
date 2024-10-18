@@ -222,7 +222,7 @@ func (h *loginHandler) createLoginToken(request *types.APIContext) (v3.Token, st
 	err = wait.ExponentialBackoffWithContext(ctx, backoff, func(_ context.Context) (bool, error) {
 		var err error
 
-		currUser, err = h.userMGR.EnsureUser(userPrincipal.Name, displayName)
+		currUser, err = h.userMGR.EnsureUserFromPrincipal(userPrincipal, displayName)
 		if err != nil {
 			logrus.Warnf("Error creating or updating user for %s, retrying: %v", userPrincipal.Name, err)
 			return false, nil
