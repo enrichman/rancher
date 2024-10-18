@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/rancher/rancher/pkg/auth/providers"
 	"github.com/rancher/rancher/pkg/controllers/management/authprovisioningv2"
 	v3 "github.com/rancher/rancher/pkg/generated/norman/management.cattle.io/v3"
 	typesrbacv1 "github.com/rancher/rancher/pkg/generated/norman/rbac.authorization.k8s.io/v1"
@@ -111,6 +112,15 @@ func (p *prtbLifecycle) Remove(obj *v3.ProjectRoleTemplateBinding) (runtime.Obje
 func (p *prtbLifecycle) reconcileSubject(binding *v3.ProjectRoleTemplateBinding) (*v3.ProjectRoleTemplateBinding, error) {
 	if binding.GroupName != "" || binding.GroupPrincipalName != "" || (binding.UserPrincipalName != "" && binding.UserName != "") {
 		return binding, nil
+	}
+
+	provider, err := providers.GetProvider("activedirectory")
+	if err == nil {
+		disabled, err := provider.IsDisabledProvider()
+		if err == nil && !disabled {
+			p, err := provider.GetPrincipal(binding.UserPrincipalName, v3.Token{})
+			fmt.Println(p, err)
+		}
 	}
 
 	if binding.UserPrincipalName != "" && binding.UserName == "" {

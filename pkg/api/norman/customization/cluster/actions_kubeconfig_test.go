@@ -238,6 +238,9 @@ func (f *fakeUserManager) DeleteToken(tokenName string) error { return nil }
 func (f *fakeUserManager) EnsureUser(principalName, displayName string) (*apimgmtv3.User, error) {
 	return nil, nil
 }
+func (f *fakeUserManager) EnsureUserFromPrincipal(principal apimgmtv3.Principal, displayName string) (*apimgmtv3.User, error) {
+	return nil, nil
+}
 func (f *fakeUserManager) CheckAccess(accessMode string, allowedPrincipalIDs []string, userPrincipalID string, groups []apimgmtv3.Principal) (bool, error) {
 	return false, nil
 }

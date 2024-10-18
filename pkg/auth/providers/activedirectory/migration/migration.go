@@ -223,7 +223,7 @@ func Migrate(management *config.ManagementContext, usersCtx []UserContext) error
 		if userCtx.User.Annotations == nil {
 			userCtx.User.Annotations = make(map[string]string)
 		}
-		userCtx.User.Annotations["cattle.io/orig"] = encodedPrincipalID
+		userCtx.User.Annotations["cattle.io/principal-id-alias"] = encodedPrincipalID
 
 		err := updatePrincipal(management, userCtx, principalID)
 		if err != nil {
