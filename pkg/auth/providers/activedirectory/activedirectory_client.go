@@ -215,37 +215,70 @@ func (p *adProvider) getPrincipalsFromSearchResult(result *ldapv3.SearchResult, 
 		return userPrincipal, groupPrincipals, err
 	}
 
-	// Check if the user is an already existing one.
-	// Look into the cache if the user with the DN is present.
-	legacyName := fmt.Sprintf("%s://%s", UserScope, result.Entries[0].DN)
-	user.ObjectMeta.Name = legacyName
-
-	cachedUser, err := p.userMGR.GetUserByPrincipalID(legacyName)
+	encodedGUID := entry.GetRawAttributeValue(ObjectGUIDAttribute)
+	parsedUUID, err := guid.New(encodedGUID)
 	if err != nil {
 		return userPrincipal, groupPrincipals, err
 	}
 
+	currentPrincipalID := fmt.Sprintf("%s://%s", UserScope, result.Entries[0].DN)
+	objectGUIDPrincipal := fmt.Sprintf("%s://%s=%s", UserScope, ObjectGUIDAttribute, parsedUUID)
+	existingUser, err := p.userMGR.GetUserByPrincipalID(objectGUIDPrincipal)
+	if err != nil {
+		return userPrincipal, groupPrincipals, err
+	}
+
+	// check migration
+	if existingUser != nil {
+		for _, principalID := range existingUser.PrincipalIDs {
+			// user was moved -> migrate
+			if strings.HasPrefix(principalID, UserScope) && principalID != currentPrincipalID {
+				// migrate!
+				fmt.Println(currentPrincipalID, principalID)
+			}
+		}
+	}
+
+	if user.Annotations == nil {
+		user.Annotations = make(map[string]string)
+	}
+
+	// encode updated current principalID into annotation
+	user.Annotations["cattle.io/principal-id"] = base32.HexEncoding.
+		WithPadding(base32.NoPadding).
+		EncodeToString([]byte(objectGUIDPrincipal))
+
+	// Check if the user is an already existing one.
+	// Look into the cache if the user with the DN is present.
+	// legacyName := fmt.Sprintf("%s://%s", UserScope, result.Entries[0].DN)
+	// user.ObjectMeta.Name = legacyName
+
+	// cachedUser, err := p.userMGR.GetUserByPrincipalID(legacyName)
+	// if err != nil {
+	// 	return userPrincipal, groupPrincipals, err
+	// }
+
 	// If cachedUser is nil then it's a new one. Use the objectGUID as principalID
 	// and store the DN in an annotation
-	if cachedUser == nil {
-		encodedGUID := entry.GetRawAttributeValue(ObjectGUIDAttribute)
-		parsedUUID, err := guid.New(encodedGUID)
-		if err != nil {
-			return userPrincipal, groupPrincipals, err
-		}
+	// if cachedUser == nil {
+	// 	encodedGUID := entry.GetRawAttributeValue(ObjectGUIDAttribute)
+	// 	parsedUUID, err := guid.New(encodedGUID)
+	// 	if err != nil {
+	// 		return userPrincipal, groupPrincipals, err
+	// 	}
 
-		user.ObjectMeta.Name = fmt.Sprintf("%s://%s=%s", UserScope, ObjectGUIDAttribute, parsedUUID)
+	// 	// user.ObjectMeta.Name = fmt.Sprintf("%s://%s=%s", UserScope, ObjectGUIDAttribute, parsedUUID)
 
-		// store the DN principalID
-		encodedPrincipalID := base32.HexEncoding.
-			WithPadding(base32.NoPadding).
-			EncodeToString([]byte(fmt.Sprintf("%s://%s", UserScope, entry.DN)))
+	// 	// store the DN principalID
+	// 	encodedPrincipalID := base32.HexEncoding.
+	// 		WithPadding(base32.NoPadding).
+	// 		EncodeToString([]byte(fmt.Sprintf("%s://%s", UserScope, entry.DN)))
 
-		if user.Annotations == nil {
-			user.Annotations = make(map[string]string)
-		}
-		user.Annotations["cattle.io/principal-id-alias"] = encodedPrincipalID
-	}
+	// 	if user.Annotations == nil {
+	// 		user.Annotations = make(map[string]string)
+	// 	}
+	// 	user.Annotations["cattle.io/principal-id-alias"] = encodedPrincipalID
+	// }
 
 	userPrincipal = *user
 	userPrincipal.Me = true

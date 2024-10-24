@@ -32,6 +32,8 @@ type UserContext struct {
 
 // Run will start the job to handle the migration
 func Run(ctx context.Context, management *config.ManagementContext) {
+	return
+
 	logrus.Info("[ActiveDirectory MIGRATION] Start")
 
 	// check if the AD prvider is enabled

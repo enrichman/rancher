@@ -468,8 +468,9 @@ func (m *userManager) ensureUser(principalName, displayName string, principalAnn
 		for k, v := range principalAnnotations {
 			annotations[k] = v
 			// add label for search
-			if k == "cattle.io/principal-id-alias" {
-				labelSet[v[:63]] = "hashed-principal-name"
+			if k == "cattle.io/principal-id" {
+				minLen := min(len(v), 63)
+				labelSet[v[:minLen]] = "hashed-principal-name"
 			}
 		}
 
@@ -767,7 +768,7 @@ func (m *userManager) checkLabels(principalName string) (*v3.User, labels.Set, e
 	var match *v3.User
 	for _, u := range users.Items {
 		principalIDs := u.PrincipalIDs
-		if ancodedAlias, found := u.Annotations["cattle.io/principal-id-alias"]; found {
+		if ancodedAlias, found := u.Annotations["cattle.io/principal-id"]; found {
 			alias, err := base32.HexEncoding.WithPadding(base32.NoPadding).DecodeString(ancodedAlias)
 			if err != nil {
 				return nil, nil, fmt.Errorf("decoding alias: %w", err)
