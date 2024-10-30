@@ -210,33 +210,32 @@ func (p *adProvider) getPrincipalsFromSearchResult(result *ldapv3.SearchResult, 
 		return v3.Principal{}, nil, nil
 	}
 
-	user, err := ldap.AttributesToPrincipal(entry.Attributes, result.Entries[0].DN, UserScope, Name, config.UserObjectClass, config.UserNameAttribute, config.UserLoginAttribute, config.GroupObjectClass, config.GroupNameAttribute)
-	if err != nil {
-		return userPrincipal, groupPrincipals, err
-	}
-
 	encodedGUID := entry.GetRawAttributeValue(ObjectGUIDAttribute)
 	parsedUUID, err := guid.New(encodedGUID)
 	if err != nil {
 		return userPrincipal, groupPrincipals, err
 	}
 
-	currentPrincipalID := fmt.Sprintf("%s://%s", UserScope, result.Entries[0].DN)
 	objectGUIDPrincipal := fmt.Sprintf("%s://%s=%s", UserScope, ObjectGUIDAttribute, parsedUUID)
 	existingUser, err := p.userMGR.GetUserByPrincipalID(objectGUIDPrincipal)
 	if err != nil {
 		return userPrincipal, groupPrincipals, err
 	}
 
-	// check migration
+	// check if user already exists
+	dnStr := result.Entries[0].DN
 	if existingUser != nil {
 		for _, principalID := range existingUser.PrincipalIDs {
-			// user was moved -> migrate
-			if strings.HasPrefix(principalID, UserScope) && principalID != currentPrincipalID {
-				// migrate!
-				fmt.Println(currentPrincipalID, principalID)
+			// user was moved
+			if strings.HasPrefix(principalID, UserScope) {
+				dnStr = strings.TrimPrefix(principalID, UserScope+"://")
 			}
 		}
+	}
+
+	user, err := ldap.AttributesToPrincipal(entry.Attributes, dnStr, UserScope, Name, config.UserObjectClass, config.UserNameAttribute, config.UserLoginAttribute, config.GroupObjectClass, config.GroupNameAttribute)
+	if err != nil {
+		return userPrincipal, groupPrincipals, err
 	}
 
 	if user.Annotations == nil {
@@ -641,13 +640,26 @@ func (p *adProvider) searchLdap(query string, scope string, config *v32.ActiveDi
 		externalID := results.Entries[i].DN
 		entry := results.Entries[i]
 
-		principalID := fmt.Sprintf("%s://%s", scope, externalID)
-		u, err := p.userMGR.GetUserByPrincipalID(principalID)
-		// user doesn't exist: use the UUID as externalID
-		if err == nil && u == nil {
-			parsedGUID, err := guid.New(entry.GetRawAttributeValue(ObjectGUIDAttribute))
-			if err == nil {
-				externalID = "objectGUID=" + parsedGUID.UUID()
+		parsedGUID, err := guid.New(entry.GetRawAttributeValue(ObjectGUIDAttribute))
+		if err != nil {
+			logrus.Errorf("Error parsing objectGUID: %v", err)
+			continue
+		}
+		objectGUIDPrincipal := fmt.Sprintf("%s://%s=%s", UserScope, ObjectGUIDAttribute, parsedGUID)
+
+		existingUser, err := p.userMGR.GetUserByPrincipalID(objectGUIDPrincipal)
+		if err != nil {
+			logrus.Errorf("Error searching user: %v", err)
+			continue
+		}
+
+		// user already exist: use the original principalID to avoid issue if moved
+		if existingUser != nil {
+			for _, principalID := range existingUser.PrincipalIDs {
+				// user was moved
+				if strings.HasPrefix(principalID, UserScope) {
+					externalID = strings.TrimPrefix(principalID, UserScope+"://")
+				}
 			}
 		}
 
